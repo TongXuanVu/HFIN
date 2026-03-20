@@ -45,7 +45,6 @@ pip install -r requirements.txt
 
 Dự án HFIN mặc định sử dụng bộ dữ liệu mạng (Network Intrusion Detection). Các bộ dữ liệu được hỗ trợ:
 1. **NF-UQ-NIDS-V2** (Mặc định)
-2. **NF-ToN-IoT-v2**
 
 ### Bước 1: Trích xuất/Tải Dataset
 Bạn cần tạo một thư mục `data/raw/` bên trong thư mục dự án và đặt file dataset vào đó.
