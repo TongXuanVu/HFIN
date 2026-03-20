@@ -1,0 +1,38 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Data files (too large)
+data/raw/
+*.parquet
+*.parquet.zip
+*.pkl
+*.csv
+*.h5
+
+# Model checkpoints
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+
+# Logs
+logs/
+
+# Reference code
+MalCL/
+papers/
+
+# Misc
+paper_analysis.json
+extract_paper.py
+HFIN_Implementation_Plan.md
+HFIN_NotebookLM_Summary.md
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
