@@ -50,12 +50,13 @@ class CloudServer:
         self.best_model_2 = None  # Model tốt nhất hiện tại
         self.best_perf = 0
 
-    def aggregate_from_edges(self, edge_weights_list):
+    def aggregate_from_edges(self, edge_weights_list, sample_counts=None):
         """
-        Tổng hợp global model từ các edge servers
+        Tổng hợp global model từ các edge servers (Eq. 14)
         
         Args:
             edge_weights_list: list of state_dict từ edge servers
+            sample_counts: list of int - số mẫu của mỗi edge
         
         Returns:
             new_global_weights: state_dict
@@ -63,8 +64,14 @@ class CloudServer:
         if len(edge_weights_list) == 0:
             return self.model.state_dict()
 
-        # FedAvg across edge servers
-        global_weights = FedAvg(edge_weights_list)
+        if sample_counts is not None and len(sample_counts) == len(edge_weights_list):
+            # Weighted FedAvg theo Eq. 14 (Sử dụng hàm đã viết sẵn trong fed_utils)
+            from federated.fed_utils import FedWeightedAvg
+            global_weights = FedWeightedAvg(edge_weights_list, sample_counts)
+        else:
+            # Fallback to simple FedAvg
+            global_weights = FedAvg(edge_weights_list)
+            
         self.model.load_state_dict(global_weights)
         return global_weights
 
@@ -183,3 +190,6 @@ class CloudServer:
             self.monitor_loader = DataLoader(
                 monitor_dataset, shuffle=True, batch_size=64, drop_last=False
             )
+    def get_weights(self):
+        """Trả về state_dict của global model hiện tại"""
+        return copy.deepcopy(self.model.state_dict())

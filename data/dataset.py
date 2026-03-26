@@ -18,9 +18,14 @@ class NetFlowDataset(Dataset):
     def __init__(self, X, y):
         """
         Args:
-            X: np.ndarray (N, num_features) - features đã chuẩn hóa
-            y: np.ndarray (N,) - nhãn lớp
+            X: np.ndarray hoặc torch.Tensor (N, num_features)
+            y: np.ndarray hoặc torch.Tensor (N,)
         """
+        if torch.is_tensor(X):
+            X = X.detach().cpu().numpy()
+        if torch.is_tensor(y):
+            y = y.detach().cpu().numpy()
+            
         self.X_all = X.astype(np.float32)
         self.y_all = y.astype(np.int64)
         

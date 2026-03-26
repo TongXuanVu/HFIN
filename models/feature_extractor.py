@@ -6,46 +6,57 @@ import torch
 import torch.nn as nn
 
 
-class MLPFeatureExtractor(nn.Module):
+class CNN1DFeatureExtractor(nn.Module):
     """
-    Multi-Layer Perceptron cho trích xuất đặc trưng từ dữ liệu NetFlow.
-    Input: (batch, num_features) → Output: (batch, feature_dim)
+    1-D CNN for features extraction from NetFlow data.
+    Architecture:
+    Conv1d (k3, p0, s1) x 2 -> MaxPool1d (k2, s2) -> Conv1d (k3, p0, s1) x 2 -> AdaptiveMaxPool1d
     """
 
-    def __init__(self, input_dim=43, hidden_dims=None, output_dim=64, dropout=0.3):
+    def __init__(self, input_dim=41, output_dim=64):
         """
         Args:
-            input_dim: Số features đầu vào (43 cho NetFlow v2)
-            hidden_dims: List kích thước các lớp ẩn (mặc định [128, 256, 128])
-            output_dim: Chiều đặc trưng đầu ra
-            dropout: Tỷ lệ dropout
+            input_dim: Number of features (default 41)
+            output_dim: Feature embedding dimension
         """
-        super(MLPFeatureExtractor, self).__init__()
-
-        if hidden_dims is None:
-            hidden_dims = [128, 256, 128]
-
-        layers = []
-        prev_dim = input_dim
-        for h_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, h_dim),
-                nn.LayerNorm(h_dim),
-                nn.ReLU(inplace=True),
-                nn.Dropout(dropout),
-            ])
-            prev_dim = h_dim
-
-        # Lớp output
-        layers.append(nn.Linear(prev_dim, output_dim))
-
-        self.body = nn.Sequential(*layers)
-
-        # Thuộc tính fc để tương thích với network.py (lấy in_features)
-        self.fc = nn.Linear(output_dim, output_dim)  # placeholder
+        super(CNN1DFeatureExtractor, self).__init__()
+        
+        # Architecture: 4 Conv1d layers (kernel 3, stride 1, padding 0)
+        # Thứ tự chuẩn theo Fig 4: Conv1d -> ReLU -> BatchNorm1d
+        self.body = nn.Sequential(
+            # Lớp 1
+            nn.Conv1d(1, 32, kernel_size=3, padding=0, stride=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(32),
+            
+            # Lớp 2
+            nn.Conv1d(32, 32, kernel_size=3, padding=0, stride=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(32),
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            
+            # Lớp 3
+            nn.Conv1d(32, 64, kernel_size=3, padding=0, stride=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(64),
+            
+            # Lớp 4
+            nn.Conv1d(64, 64, kernel_size=3, padding=0, stride=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(64),
+            
+            # Global Pooling
+            nn.AdaptiveMaxPool1d(1)
+        )
 
     def forward(self, x):
-        return self.body(x)
+        # x: (batch, features) -> (batch, 1, features)
+        if len(x.shape) == 2:
+            x = x.unsqueeze(1)
+        
+        out = self.body(x)
+        out = out.view(out.size(0), -1) # Flatten (64 dimensions)
+        return out
 
 
 class LeNetTabular(nn.Module):

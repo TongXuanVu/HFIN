@@ -29,11 +29,16 @@ class HFINNetwork(nn.Module):
 
     def _get_feature_dim(self):
         """Tìm output dimension của feature extractor"""
-        for module in reversed(list(self.feature.body.modules())):
-            if isinstance(module, nn.Linear):
-                return module.out_features
-        # Fallback
-        return self.feature.fc.in_features
+        # Nếu feature extractor có lớp fc (MLP cũ)
+        if hasattr(self.feature, 'fc'):
+            return self.feature.fc.out_features
+            
+        # Tìm lớp BatchNorm1d hoặc Conv1d cuối cùng (cho 1D-CNN)
+        for module in reversed(list(self.feature.modules())):
+            if isinstance(module, (nn.BatchNorm1d, nn.Conv1d)):
+                return module.num_features if hasattr(module, 'num_features') else module.out_channels
+        
+        return 64 # Mặc định cho HFIN CNN
 
     def forward(self, x):
         """Forward pass: features → logits"""
@@ -56,6 +61,30 @@ class HFINNetwork(nn.Module):
         # Copy trọng số cũ
         self.fc.weight.data[:old_num_classes] = old_weight
         self.fc.bias.data[:old_num_classes] = old_bias
+
+    def weight_align(self, old_num_classes, new_num_classes):
+        """
+        Weight Aligning (WA) - Eq. từ bài báo:
+        Hiệu chỉnh trọng số của các lớp mới để tránh thiên kiến (bias)
+        Norm(w_new) = Norm(w_old) * (mean_norm_old / mean_norm_new)
+        """
+        weights = self.fc.weight.data
+        new_classes_count = new_num_classes - old_num_classes
+        
+        if old_num_classes == 0 or new_classes_count <= 0:
+            return
+
+        # Tính mean norm của các vector trọng số lớp cũ
+        old_weights = weights[:old_num_classes]
+        new_weights = weights[old_num_classes:new_num_classes]
+        
+        old_norms = torch.norm(old_weights, p=2, dim=1)
+        new_norms = torch.norm(new_weights, p=2, dim=1)
+        
+        gamma = torch.mean(old_norms) / torch.mean(new_norms)
+        
+        # Cập nhật trọng số của các lớp mới
+        self.fc.weight.data[old_num_classes:new_num_classes] *= gamma
 
     def feature_extractor(self, x):
         """Trích xuất đặc trưng (không qua FC head)"""

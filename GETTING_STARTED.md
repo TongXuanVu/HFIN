@@ -1,129 +1,91 @@
-# HFIN: Hướng dẫn cài đặt và sử dụng
+# HFIN: Hướng dẫn Cài đặt & Sử dụng
 
-Tài liệu này hướng dẫn chi tiết cách tải dataset, thiết lập môi trường và các lệnh để chạy dự án **HFIN (Hierarchical Federated Class-Incremental Learning)**.
-
----
-
-## 1. Yêu cầu hệ thống (Prerequisites)
-- **Hệ điều hành**: Windows/Linux/macOS
-- **Python**: Phiên bản 3.8 trở lên (Khuyến nghị 3.9 hoặc 3.10)
-- **GPU**: Khuyến nghị có NVIDIA GPU + CUDA để huấn luyện nhanh hơn (vẫn hỗ trợ chạy trên CPU).
+Tài liệu này cung cấp hướng dẫn chi tiết cách thiết lập môi trường và vận hành hệ thống **HFIN (Hierarchical Federated Class-Incremental Learning)**.
 
 ---
 
-## 2. Thiết lập môi trường (Setup Environment)
+## 1. Yêu cầu Hệ thống
+- **Hệ điều hành**: Windows/Linux/macOS.
+- **Python**: 3.8 trở lên.
+- **GPU**: Khuyến nghị NVIDIA GPU (CUDA) để huấn luyện nhanh (đặc biệt khi dùng 60 clients).
 
-Khuyến nghị sử dụng `conda` hoặc `venv` để tạo môi trường ảo độc lập.
+---
 
-### Cách 1: Sử dụng `conda` (Khuyến nghị)
-```bash
-# Tạo môi trường ảo tên 'hfin' với Python 3.10
-conda create -n hfin python=3.10 -y
+## 2. Thiết lập Môi trường
 
-# Kích hoạt môi trường
-conda activate hfin
-
-# Cài đặt các thư viện cần thiết
-pip install -r requirements.txt
-```
-
-### Cách 2: Sử dụng `venv` (Mặc định của Python)
 ```bash
 # Tạo môi trường ảo
-python -m venv hfin_env
+conda create -n hfin python=3.10 -y
+conda activate hfin
 
-# Kích hoạt môi trường (Windows)
-hfin_env\Scripts\activate
-
-# Cài đặt các thư viện cần thiết
+# Cài đặt thư viện
 pip install -r requirements.txt
 ```
 
 ---
 
-## 3. Tải và chuẩn bị Dataset
+## 3. Chuẩn bị Dữ liệu (iNF-ToN-IoT & iNF-UQ-NIDS)
 
-Dự án HFIN mặc định sử dụng bộ dữ liệu mạng (Network Intrusion Detection). Các bộ dữ liệu được hỗ trợ:
-1. **NF-UQ-NIDS-V2** (Mặc định)
+Dự án sử dụng các bộ dữ liệu NetFlow biến thể iNF (lấy từ bài báo).
 
-### Bước 1: Trích xuất/Tải Dataset
-Bạn cần tạo một thư mục `data/raw/` bên trong thư mục dự án và đặt file dataset vào đó.
-
-Hệ thống hỗ trợ đọc file dưới định dạng `.csv` hoặc `.parquet`. **(Khuyến nghị dùng định dạng `.parquet` để tiết kiệm bộ nhớ và tăng tốc độ đọc dữ liệu).**
-
-Cấu trúc thư mục mong muốn sau khi tải:
+### Bước 1: Vị trí Dữ liệu
+Đặt các file CSV thô vào thư mục `data/raw/`.
+Cấu trúc ví dụ:
 ```text
-HFIN/
+IDPS/
 ├── data/
 │   ├── raw/
-│   │   └── NF-UQ-NIDS-V2.parquet   <-- (Hoặc .csv)
-│   └── ...
+│   │   └── NF-ToN-IoT-v2.csv
+│   │   └── NF-UQ-NIDS-v2.csv
 ```
 
-### Bước 2: Tiền xử lý dữ liệu
-Mặc dù `main.py` sẽ tự động gọi hàm tiền xử lý nếu chưa có dữ liệu xử lý, bạn cũng có thể chạy độc lập file `preprocessing.py` để kiểm tra dữ liệu trước:
-
-```bash
-# Chạy script tiền xử lý trực tiếp
-python data/preprocessing.py ./data/raw/
-```
-Output mong đợi: Script sẽ tự tìm file `.parquet` hoặc `.csv` trong thư mục `raw`, cân bằng các nhãn (downsampling), mã hóa nhãn, chuẩn hóa dữ liệu, chia Train/Test và lưu kết quả ra file `data/raw/nf_unsw_nb15_processed.pkl`.
+### Bước 2: Phân chia Non-IID (Dirichlet)
+Mặc định hệ thống sẽ tự động phân chia dữ liệu cho **60 Clients** theo thuật toán Dirichlet ($\alpha=0.5$). Mỗi **Edge Server** sẽ quản lý **20 Clients**.
 
 ---
 
-## 4. Các lệnh để chạy (How to Run)
+## 4. Hướng dẫn Chạy (Running)
 
-Để bắt đầu quy trình huấn luyện Federated Class-Incremental Learning, chạy file `main.py`.
-
-### ⚡ Lệnh chạy mặc định
-Lệnh này sẽ chạy với cấu hình mặc định (bộ dữ liệu `nf_unsw_nb15`, 10 clients, 3 edge servers):
+### ⚡ Chạy mặc định hệ thống (iNF-ToN-IoT-v2)
+Lệnh này sẽ chạy 80 rounds toàn cục, với 5 rounds đánh giá định kỳ:
 ```bash
-python main.py
+python main.py --dataset nf_ton_iot --epochs_global 80 --eval_interval 5
 ```
 
-### 🔧 Chạy với tham số tùy chỉnh
-Bạn có thể tùy chỉnh các tham số huấn luyện thông qua command line. Dưới đây là ví dụ thay đổi một số cấu hình quan trọng:
+### 🔧 Tham số quan trọng
+- `--dataset`: `nf_ton_iot` (10 lớp) hoặc `nf_uq_nids` (21 lớp).
+- `--num_clients`: Số lượng thiết bị IIoT (Mặc định: 60).
+- `--num_edge_servers`: Số lượng Edge Server (Mặc định: 3).
+- `--epochs_global`: Số vòng tổng hợp tại Cloud (Bài báo khuyến nghị 40 hoặc 80).
+- `--eval_interval`: Chu kỳ đánh giá model (Mặc định: 5).
+- `--task_size`: Số lượng lớp mới học thêm mỗi task (VD: 2 hoặc 5).
+- `--memory_size`: Bộ nhớ mẫu tại **mỗi Edge Server** (Mặc định: 500 mẫu).
 
-```bash
-python main.py \
-    --dataset nf_unsw_nb15 \
-    --data_path ./data/raw/ \
-    --num_clients 20 \
-    --num_edge_servers 4 \
-    --epochs_global 100 \
-    --epochs_local 5 \
-    --batch_size 128 \
-    --task_size 2 \
-    --memory_size 2000 \
-    --device cuda
-```
-
-### 🐛 Chạy thử nghiệm (Debug Mode)
-Nếu bạn chỉ muốn chạy thử để kiểm tra code có lỗi hay không (không cần độ chính xác cao), hãy thêm flag `--debug`. Hệ thống sẽ giới hạn chỉ dùng 50,000 mẫu dữ liệu:
+### 🐛 Chế độ Thử nghiệm (Debug Mode)
+Dùng để kiểm tra logic code nhanh với tập dữ liệu nhỏ:
 ```bash
 python main.py --debug
 ```
 
-### Danh sách một số tham số quan trọng:
-- `--dataset`: Tên bộ dữ liệu (`nf_unsw_nb15` hoặc `nf_ton_iot`).
-- `--data_path`: Đường dẫn tới thư mục chứa file dữ liệu mẫu (`./data/raw/`).
-- `--num_clients`: Số lượng client tham gia Federated Learning (Mặc định: 10).
-- `--num_edge_servers`: Số lượng Edge Server (Mặc định: 3).
-- `--epochs_global`: Số vòng (rounds) tổng hợp trên Cloud (Mặc định: 100).
-- `--epochs_local`: Số epoch huấn luyện tại mỗi Local Client (Mặc định: 5).
-- `--task_size`: Số lớp (classes) mới xuất hiện trong mỗi task học liên tục (Mặc định: 2).
-- `--num_base_classes`: Số lớp khởi tạo ở Task 0 (Mặc định: 2).
-- `--device`: Thiết bị chạy (`cuda` hoặc `cpu`).
+---
+
+## 5. Kết quả & Đánh giá (Evaluation)
+
+Toàn bộ kết quả (accuracy, F1-score, forgetting metric) được lưu tại thư mục `logs/` theo thời gian thực.
+
+### Các Chỉ số Chính:
+1.  **Macro-F1**: Đánh giá khả năng nhận diện đa lớp trên dữ liệu mất cân bằng.
+2.  **Average Forgetting ($f$)**: Đo lường mức độ quên kiến thức cũ sau khi học lớp mới. Công thức:
+    $$f_k = \frac{1}{k-1} \sum_{j=1}^{k-1} (A_{j,j} - A_{k,j})$$
+    (Trong đó $A_{k,j}$ là độ chính xác của lớp $j$ sau khi học task $k$).
+
+### Đồ thị:
+- `accuracy_curve.png`: Biểu đồ độ chính xác toàn cầu qua từng rounds.
+- `confusion_matrix.png`: Ma trận nhầm lẫn chi tiết của task hiện tại.
 
 ---
 
-## 5. Kết quả & Logs
-
-Trong quá trình huấn luyện, tất cả trạng thái và kết quả sẽ tự động được lưu vào thư mục `logs/`. Mỗi lần chạy sẽ tạo một thư mục con chứa ngày giờ cụ thể (VD: `logs/20-03-26_18-05/`).
-
-Các file sinh ra trong thư mục logs bao gồm:
-1. `training.log`: Toàn bộ nhật ký console, kết quả vòng lặp.
-2. `accuracy_curve.png`: Biểu đồ biểu diễn độ chính xác toàn cầu theo thời gian.
-3. `confusion_matrix.png`: Biểu đồ ma trận nhầm lẫn của Task hiện tại.
-
-Sau khi huấn luyện xong, mô hình Global tốt nhất (model checkpoint) sẽ được lưu tại `checkpoints/hfin_final_model.pth`.
+## 💡 Lưu ý quan trọng từ Bài báo
+- **WTO Selection**: Đừng ngạc nhiên nếu không phải tất cả Client đều gửi dữ liệu mỗi vòng. Edge Server chỉ chọn lọc các Client có dữ liệu quan trọng để tối ưu băng thông.
+- **LR Setup**: Tốc độ học tự động chuyển từ $10^{-2}$ (Base Task) sang $2 \times 10^{-2}$ (Incremental Task) theo đúng Sec VI.B.
+- **Edge Training**: Local Training hiện tại diễn ra tại Edge Server, không phải tại Client.

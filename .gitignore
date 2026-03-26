@@ -20,15 +20,28 @@ checkpoints/
 # Logs
 logs/
 
+# Plots & visualizations
+plots/
+
 # Reference code
 MalCL/
 papers/
+paper/
+
+# Progress report MDs (local only)
+hfin_stages_4_5_6_summary.md
+HFIN_Implementation_Plan.md
+HFIN_NotebookLM_Summary.md
+
+# Temp / scratch scripts
+tmp_*.py
+generate_plot.py
+verify_partition.py
+Rebuild.txt
 
 # Misc
 paper_analysis.json
 extract_paper.py
-HFIN_Implementation_Plan.md
-HFIN_NotebookLM_Summary.md
 
 # IDE / OS
 .vscode/

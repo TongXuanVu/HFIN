@@ -6,10 +6,10 @@ Luồng huấn luyện:
 1. Load & tiền xử lý dataset
 2. Khởi tạo: Cloud Server, Edge Servers, Clients
 3. Với mỗi global round:
-   a. Phân phối global model → edge → clients  
-   b. Clients huấn luyện local
-   c. Edge servers tổng hợp (WTO)
-   d. Cloud server tổng hợp global
+   a. Phân phối global model → Cloud → Edge
+   b. Edge Servers thu thập dữ liệu từ Clients và huấn luyện local (WTO)
+   c. Edge Servers tổng hợp weights nội bộ rồi gửi lên Cloud
+   d. Cloud Server tổng hợp global (FedAvg)
    e. Đánh giá global model
 """
 import os
@@ -28,7 +28,7 @@ from config.config import args_parser
 from data.preprocessing import load_and_preprocess
 from data.dataset import NetFlowDataset
 from data.partition import partition_data_non_iid, assign_clients_to_edges
-from models.feature_extractor import MLPFeatureExtractor, LeNetTabular, weights_init
+from models.feature_extractor import CNN1DFeatureExtractor, LeNetTabular, weights_init
 from models.network import HFINNetwork
 from federated.client import HFINClient
 from federated.edge_server import EdgeServer
@@ -103,8 +103,12 @@ def main():
     
     # === Phân chia dữ liệu cho clients ===
     logger.info('\n[2/4] Partitioning data to clients...')
+    # Phân phối Dirichlet theo Mục VI.B: Alpha = 0.3 (Benign: 0), Alpha = 0.8 (Attack: >0)
+    alpha_config = {0: args.alpha_benign} # Lớp 0 (Benign) dùng alpha_benign=0.3
+    # Các lớp khác tự động dùng alpha_attack=0.8 trong logic partition_data_non_iid
+    
     client_data_indices, client_classes = partition_data_non_iid(
-        y_train, args.num_clients, seed=args.seed
+        y_train, args.num_clients, alpha=alpha_config, seed=args.seed
     )
     
     # Gán clients vào edge servers
@@ -113,11 +117,9 @@ def main():
     
     # === Khởi tạo models & components ===
     logger.info('\n[3/4] Initializing models...')
-    feature_extractor = MLPFeatureExtractor(
+    feature_extractor = CNN1DFeatureExtractor(
         input_dim=num_features,
-        hidden_dims=args.hidden_dims,
-        output_dim=args.feature_dim,
-        dropout=args.dropout
+        output_dim=args.feature_dim
     )
     
     # Encode model (cho prototype gradient)
@@ -132,35 +134,33 @@ def main():
     model_g = HFINNetwork(args.num_base_classes, copy.deepcopy(feature_extractor))
     model_g = model_to_device(model_g, args.device)
     
-    # Tạo clients
-    clients = []
+    # Tạo clients (Data Providers)
+    clients_dict = {}
     for c_id in range(args.num_clients):
         indices = client_data_indices[c_id]
         client = HFINClient(
             client_id=c_id,
-            num_classes=args.num_base_classes,
-            feature_extractor=copy.deepcopy(feature_extractor),
-            batch_size=args.batch_size,
-            task_size=args.task_size,
-            memory_size=args.memory_size,
-            epochs=args.epochs_local,
-            learning_rate=args.learning_rate,
             train_data=X_train[indices],
             train_labels=y_train[indices],
-            device=args.device,
-            num_base_classes=args.num_base_classes,
-            encode_model=copy.deepcopy(encode_model)
+            device=args.device
         )
-        clients.append(client)
+        clients_dict[c_id] = client
     
-    # Tạo edge servers
+    # Tạo edge servers (Local Trainers)
     edge_servers = []
     for e_id in range(args.num_edge_servers):
-        edge = EdgeServer(edge_id=e_id, device=args.device)
+        edge = EdgeServer(
+            edge_id=e_id, 
+            num_classes=args.num_base_classes,
+            feature_extractor=copy.deepcopy(feature_extractor),
+            device=args.device,
+            memory_size=args.memory_size,
+            task_size=args.task_size
+        )
         edge.set_clients(edge_client_map[e_id])
         edge_servers.append(edge)
     
-    # Tạo cloud server
+    # === Cloud server ===
     cloud_server = CloudServer(
         num_classes=args.num_base_classes,
         feature_extractor=copy.deepcopy(feature_extractor),
@@ -171,129 +171,117 @@ def main():
     
     # === Training Loop ===
     logger.info('\n[4/4] Starting training...')
+    # === Trình quản lý Huấn luyện ===
     accuracy_history = []
+    task_accuracies_per_class = {} # Lưu accuracy từng lớp theo round để tính forgetting
     old_task_id = -1
     classes_learned = args.num_base_classes
     
-    # Quản lý old/new clients
-    old_client_0 = []  # Clients cũ không train
-    old_client_1 = list(range(args.num_clients))  # Clients cũ có train
-    new_client = []  # Clients mới
+    # Track F1 scores for WTO (Eq. 8)
+    current_f1_scores = {i: 0.9 for i in range(args.total_classes)}
+    
+    # Quản lý task
     
     for ep_g in range(args.epochs_global):
-        pool_grad = []
         task_id = ep_g // args.tasks_global
         
+        # === Cập nhật Epochs & LR cho Incremental Task (Sec VI.B) ===
+        if task_id > 0:
+            # Bài báo dùng 80 rounds cho incremental tasks
+            # Ở đây ta điều chỉnh logic theo tasks_global nếu cần
+            pass
+            
         # === Phát hiện task mới ===
-        if task_id != old_task_id and old_task_id != -1:
-            # Cập nhật client groups
-            overall_client = len(old_client_0) + len(old_client_1) + len(new_client)
-            new_client_count = min(args.task_size, args.num_clients - overall_client)
-            if new_client_count > 0:
-                new_client = list(range(overall_client, overall_client + new_client_count))
+        if task_id != old_task_id:
+            # WA: Weight Aligning (Eq. 9)
+            if old_task_id != -1:
+                model_g.weight_align(classes_learned - args.task_size, classes_learned)
             
-            active_clients = list(range(min(overall_client + new_client_count, args.num_clients)))
-            n_old_1 = int(len(active_clients) * 0.9)
-            old_client_1 = random.sample(active_clients, n_old_1)
-            old_client_0 = [i for i in active_clients if i not in old_client_1]
+            # Cập nhật số lớp đã học
+            if task_id == 0:
+                classes_learned = args.num_base_classes
+            else:
+                classes_learned = args.num_base_classes + task_id * args.task_size
             
-            # Mở rộng model cho lớp mới
-            classes_learned += args.task_size
-            classes_learned = min(classes_learned, args.total_classes)
-            model_g.Incremental_learning(classes_learned)
+            # 1. Chuẩn bị model cho task mới
+            if classes_learned > model_g.fc.out_features:
+                model_g.Incremental_learning(classes_learned)
+                logger.info(f'Expanded global model to {classes_learned} classes for Task {task_id}')
+            
+            # 2. Đồng bộ kiến trúc sang Cloud và Edge
             model_g = model_to_device(model_g, args.device)
-            cloud_server.model.Incremental_learning(classes_learned)
+            cloud_server.model = copy.deepcopy(model_g)
+            for edge in edge_servers:
+                edge.model = copy.deepcopy(model_g)
+                # Cập nhật danh sách các lớp edge "đã biết"
+                edge.learned_classes = list(range(classes_learned))
+            
+            # 3. Cập nhật Learning Rate (Sec VI.B: 0.01 base, 0.02 incremental)
+            current_lr = args.learning_rate if task_id == 0 else args.lr_incremental
+            logger.info(f'Task {task_id} started. Learning Rate: {current_lr}')
         
         logger.info(f'\n--- Global Round {ep_g}/{args.epochs_global}, Task {task_id} ---')
         
-        # === Lấy old model cho distillation ===
-        model_old = cloud_server.model_back()
-        
-        # === Chọn clients cho round này ===
-        num_active = len(old_client_0) + len(old_client_1) + len(new_client)
-        num_active = min(num_active, args.num_clients)
-        available_clients = list(range(num_active))
-        selected_clients = random.sample(
-            available_clients, min(args.local_clients, len(available_clients))
-        )
-        logger.info(f'  Selected clients: {selected_clients}')
-        
-        # === Local Training ===
-        client_models_info = []
-        for c_id in selected_clients:
-            if c_id >= len(clients):
-                continue
-                
-            # Cập nhật model global cho client
-            clients[c_id].model = copy.deepcopy(model_g)
-            
-            # Chuẩn bị dữ liệu
-            group = 0 if c_id in old_client_0 else 1
-            clients[c_id].beforeTrain(task_id, group)
-            clients[c_id].update_exemplar()
-            
-            # Huấn luyện local
-            clients[c_id].train(ep_g, model_old)
-            
-            # Thu thập model weights và class info
-            info = {
-                'client_id': c_id,
-                'model_weights': clients[c_id].get_model_weights(),
-                'class_counts': clients[c_id].get_class_counts()
-            }
-            client_models_info.append(info)
-            
-            # Thu thập prototype gradients
-            proto = clients[c_id].proto_grad_sharing()
-            if proto is not None:
-                pool_grad.extend(proto)
-        
-        # === Cập nhật exemplar cho clients không train ===
-        for c_id in range(min(num_active, len(clients))):
-            if c_id not in selected_clients:
-                clients[c_id].model = copy.deepcopy(model_g)
-                group = 0 if c_id in old_client_0 else 1
-                clients[c_id].beforeTrain(task_id, group)
-                clients[c_id].update_exemplar()
-        
-        # === Edge-level Aggregation (WTO) ===
-        edge_weights = []
+        # === Phân phối Global Model về các Edges ===
+        global_weights = cloud_server.get_weights()
         for edge in edge_servers:
-            # Lọc client models thuộc edge này
-            edge_clients_info = [
-                info for info in client_models_info
-                if info['client_id'] in edge.client_ids
-            ]
-            if edge_clients_info:
-                agg = edge.aggregate(
-                    edge_clients_info, use_wto=True,
-                    wto_alpha=args.wto_alpha,
-                    max_time=2.0
-                )
-                if agg is not None:
-                    edge_weights.append(agg)
+            edge.set_weights(global_weights)
+        
+        # === Edge Training (WTO + Data Collection + FCIL) ===
+        edge_weights = []
+        edge_samples = []
+        task_classes = get_task_classes(task_id, args.num_base_classes, args.task_size)
+        
+        for edge in edge_servers:
+            # Huấn luyện tại Edge (Giai đoạn 4)
+            weights, num_samples = edge.train_local(
+                clients_dict=clients_dict,
+                global_round=ep_g,
+                task_id=task_id,
+                task_classes=task_classes,
+                current_f1_scores=current_f1_scores,
+                epochs=args.epochs_local,
+                lr=current_lr,
+                batch_size=args.batch_size
+            )
+            if weights:
+                edge_weights.append(weights)
+                edge_samples.append(num_samples)
         
         # === Cloud-level Global Aggregation ===
         if edge_weights:
-            global_weights = cloud_server.aggregate_from_edges(edge_weights)
-            model_g.load_state_dict(global_weights)
+            global_weights_new = cloud_server.aggregate_from_edges(edge_weights, edge_samples)
+            model_g.load_state_dict(global_weights_new)
         
-        # Cập nhật cloud server
-        cloud_server.model = copy.deepcopy(model_g)
-        cloud_server.update_monitor(pool_grad if pool_grad else None)
+        # Cập nhật cloud server state
+        cloud_server.model.load_state_dict(model_g.state_dict())
+        # cloud_server.update_monitor(pool_grad if pool_grad else None) # Prototype gradient sharing tạm bỏ qua để đơn giản hóa
         
-        # === Đánh giá ===
-        acc = model_global_eval(
-            model_g, test_dataset, task_id, args.task_size,
-            args.num_base_classes, args.device
-        )
-        accuracy_history.append(acc)
-        
-        logger.info(f'  Task {task_id}, Round {ep_g}: Accuracy = {acc:.2f}%')
+        # === Đánh giá Định kỳ (Sec VI.B: e=5) ===
+        if ep_g == 0 or (ep_g + 1) % args.eval_interval == 0 or ep_g == args.epochs_global - 1:
+            acc = model_global_eval(
+                model_g, test_dataset, task_id, args.task_size,
+                args.num_base_classes, args.device
+            )
+            accuracy_history.append(acc)
+            logger.info(f'  Task {task_id}, Round {ep_g}: Accuracy = {acc:.2f}%')
+            
+            # Lưu accuracy phục vụ tính Forgetting
+            results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
+            task_accuracies_per_class[ep_g] = {
+                i: f1 for i, f1 in enumerate(results['per_class_f1'])
+            }
         
         old_task_id = task_id
     
-    # === Kết thúc: Đánh giá cuối cùng ===
+    # === Kết thúc: Đánh giá cuối cùng & Forgetting Metric ===
+    from evaluate import compute_forgetting
+    avg_forgetting = compute_forgetting(task_accuracies_per_class)
+    logger.info(f'\n{"="*60}')
+    logger.info(f'  KẾT QUẢ CUỐI CÙNG')
+    logger.info(f'  Final Accuracy: {accuracy_history[-1]:.2f}%')
+    logger.info(f'  Avg Forgetting: {avg_forgetting:.2f}%')
+    logger.info(f'{"="*60}')
     logger.info('\n' + '='*60)
     logger.info('TRAINING COMPLETED!')
     logger.info('='*60)

@@ -15,39 +15,50 @@ def get_one_hot(target, num_classes, device):
 
 
 def distillation_loss(outputs, old_outputs, targets, num_classes, 
-                      old_num_classes, device, temperature=2.0, alpha=0.5):
+                      old_num_classes, device, temperature=2.0):
     """
-    Tính loss kết hợp: classification + knowledge distillation
+    Tính loss kết hợp theo Eq. 7 từ bài báo HFIN:
+    L = lambda1 * L_CE + lambda2 * L_KD
+    
+    Trong đó:
+    lambda1 = n_new / (n_old + n_new)  (Tỷ lệ lớp mới)
+    lambda2 = n_old / (n_old + n_new)  (Tỷ lệ lớp cũ)
     
     Args:
         outputs: logits từ model hiện tại (batch, num_classes)
         old_outputs: logits từ model cũ (batch, old_num_classes) hoặc None
         targets: nhãn thật (batch,)
-        num_classes: tổng số lớp hiện tại
-        old_num_classes: số lớp của model cũ
+        num_classes: tổng số lớp hiện tại (n_old + n_new)
+        old_num_classes: số lớp của model cũ (n_old)
         device: str
-        temperature: temperature cho soft targets
-        alpha: trọng số distillation (0 = chỉ CE, 1 = chỉ distill)
-    
-    Returns:
-        loss tổng hợp
+        temperature: temperature cho soft targets (T)
     """
-    # Classification loss (cross-entropy)
-    target_one_hot = get_one_hot(targets, num_classes, device)
-    loss_ce = F.binary_cross_entropy_with_logits(outputs, target_one_hot)
+    # 1. Classification loss (cross-entropy) cho tất cả các lớp hiện tại
+    loss_ce = F.cross_entropy(outputs, targets)
     
     if old_outputs is None or old_num_classes == 0:
         return loss_ce
     
-    # Knowledge distillation loss
-    # Soft targets từ model cũ
-    soft_target = torch.sigmoid(old_outputs / temperature)
-    soft_output = torch.sigmoid(outputs[:, :old_num_classes] / temperature)
+    # 2. Knowledge distillation loss (Eq. 11, 12)
+    # Sử dụng Softmax + Temperature
+    # p_old: soft targets từ model cũ
+    # p_new: soft predictions từ model mới (chỉ lấy phần các lớp cũ)
+    p_old = F.softmax(old_outputs / temperature, dim=1)
+    p_new = F.log_softmax(outputs[:, :old_num_classes] / temperature, dim=1)
     
-    loss_kd = F.binary_cross_entropy(soft_output, soft_target.detach())
+    # KL Divergence là cách chuẩn để tính KD loss với softmax
+    loss_kd = F.kl_div(p_new, p_old.detach(), reduction='batchmean') * (temperature ** 2)
     
-    # Kết hợp
-    total_loss = (1 - alpha) * loss_ce + alpha * loss_kd
+    # 3. Hệ số Lambdas theo tỉ lệ lớp (Sửa lỗi ngược trọng số)
+    n_old = float(old_num_classes)
+    n_new = float(num_classes - old_num_classes)
+    n_total = float(num_classes)
+    
+    lambda1 = n_new / n_total  # Trọng số cho lớp mới
+    lambda2 = n_old / n_total  # Trọng số cho lớp cũ
+    
+    # Kết hợp (Eq. 7)
+    total_loss = lambda1 * loss_ce + lambda2 * loss_kd
     
     return total_loss
 
