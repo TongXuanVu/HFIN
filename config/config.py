@@ -52,10 +52,10 @@ def args_parser():
                         help='Số edge servers (Mục VI.B: 3 edges, mỗi edge 20 clients)')
     parser.add_argument('--local_clients', type=int, default=10,
                         help='Số clients được chọn mỗi vòng (mặc định: 10)')
-    parser.add_argument('--epochs_global', type=int, default=80,
-                        help='Tổng số global rounds (Mục VI.B: 40 base + 80 incremental)')
-    parser.add_argument('--tasks_global', type=int, default=10,
-                        help='Số global rounds cho mỗi task')
+    parser.add_argument('--epochs_base', type=int, default=40,
+                        help='Số global rounds cho Base Task (Mục VI.B: 40 rounds)')
+    parser.add_argument('--epochs_incremental', type=int, default=80,
+                        help='Số global rounds cho mỗi Incremental Task (Mục VI.B: 80 rounds/task)')
     parser.add_argument('--dirichlet_alpha', type=float, default=0.5,
                         help='Tham số Dirichlet non-IID (nhỏ → non-IID mạnh hơn)')
     parser.add_argument('--alpha_benign', type=float, default=0.3,
@@ -124,8 +124,8 @@ def args_parser():
     if args.debug:
         if args.max_samples == 0:
             args.max_samples = 50000
-        args.epochs_global  = 2
-        args.tasks_global   = 1
+        args.epochs_base       = 2
+        args.epochs_incremental = 2
         args.num_clients    = 6
         args.num_edge_servers = 2
         args.local_clients  = 2

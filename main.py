@@ -169,111 +169,110 @@ def main():
         encode_model=copy.deepcopy(encode_model)
     )
     
-    # === Training Loop ===
+    # === Training Loop (Task-based) ===
     logger.info('\n[4/4] Starting training...')
-    # === Trình quản lý Huấn luyện ===
     accuracy_history = []
-    task_accuracies_per_class = {} # Lưu accuracy từng lớp theo round để tính forgetting
-    old_task_id = -1
+    task_accuracies_per_class = {}  # Lưu accuracy từng lớp theo round để tính forgetting
     classes_learned = args.num_base_classes
-    
-    # Track F1 scores for WTO (Eq. 8)
     current_f1_scores = {i: 0.9 for i in range(args.total_classes)}
-    
-    # Quản lý task
-    
-    for ep_g in range(args.epochs_global):
-        task_id = ep_g // args.tasks_global
-        
-        # === Cập nhật Epochs & LR cho Incremental Task (Sec VI.B) ===
+    global_round = 0  # Bộ đếm round tổng (để log)
+
+    # Xây dựng danh sách tasks từ task_schedule
+    # Mỗi task là một list class IDs, ví dụ: [[0,1], [2,3], [4,5], [6,7], [8,9]]
+    from data.partition import get_task_schedule
+    all_task_classes = get_task_schedule(args.dataset, args.task_schedule)
+    num_tasks = len(all_task_classes)
+
+    for task_id, task_classes in enumerate(all_task_classes):
+        # Số rounds cho task này (Sec VI.B)
+        num_rounds = args.epochs_base if task_id == 0 else args.epochs_incremental
+
+        # === Chuẩn bị model cho task mới ===
+        # WA: Weight Aligning (Eq. 9) trước khi mở rộng
         if task_id > 0:
-            # Bài báo dùng 80 rounds cho incremental tasks
-            # Ở đây ta điều chỉnh logic theo tasks_global nếu cần
-            pass
-            
-        # === Phát hiện task mới ===
-        if task_id != old_task_id:
-            # WA: Weight Aligning (Eq. 9)
-            if old_task_id != -1:
-                model_g.weight_align(classes_learned - args.task_size, classes_learned)
-            
-            # Cập nhật số lớp đã học
-            if task_id == 0:
-                classes_learned = args.num_base_classes
-            else:
-                classes_learned = args.num_base_classes + task_id * args.task_size
-            
-            # 1. Chuẩn bị model cho task mới
-            if classes_learned > model_g.fc.out_features:
-                model_g.Incremental_learning(classes_learned)
-                logger.info(f'Expanded global model to {classes_learned} classes for Task {task_id}')
-            
-            # 2. Đồng bộ kiến trúc sang Cloud và Edge
-            model_g = model_to_device(model_g, args.device)
-            cloud_server.model = copy.deepcopy(model_g)
+            model_g.weight_align(classes_learned - args.task_size, classes_learned)
+
+        # Cập nhật số lớp đã học
+        classes_learned = len(task_classes) if task_id == 0 else classes_learned + len(task_classes)
+
+        # Mở rộng Classification Head nếu cần
+        if classes_learned > model_g.fc.out_features:
+            model_g.Incremental_learning(classes_learned)
+            logger.info(f'Expanded global model to {classes_learned} classes for Task {task_id}')
+
+        # Đồng bộ kiến trúc sang Cloud & Edge
+        model_g = model_to_device(model_g, args.device)
+        cloud_server.model = copy.deepcopy(model_g)
+        for edge in edge_servers:
+            edge.model = copy.deepcopy(model_g)
+            edge.learned_classes = list(range(classes_learned))
+
+        # Learning Rate theo Sec VI.B
+        current_lr = args.learning_rate if task_id == 0 else args.lr_incremental
+        logger.info(f'\n{"="*60}')
+        logger.info(f'Task {task_id}/{num_tasks - 1} | Classes: {task_classes} | '
+                    f'{num_rounds} rounds | LR: {current_lr}')
+        logger.info(f'{"="*60}')
+
+        # === Inner loop: rounds cho task này ===
+        for round_in_task in range(num_rounds):
+            global_round += 1
+
+            logger.info(f'\n--- Task {task_id}, Round {round_in_task + 1}/{num_rounds} '
+                        f'(Global {global_round}) ---')
+
+            # Phân phối Global Model về các Edges
+            global_weights = cloud_server.get_weights()
             for edge in edge_servers:
-                edge.model = copy.deepcopy(model_g)
-                # Cập nhật danh sách các lớp edge "đã biết"
-                edge.learned_classes = list(range(classes_learned))
-            
-            # 3. Cập nhật Learning Rate (Sec VI.B: 0.01 base, 0.02 incremental)
-            current_lr = args.learning_rate if task_id == 0 else args.lr_incremental
-            logger.info(f'Task {task_id} started. Learning Rate: {current_lr}')
-        
-        logger.info(f'\n--- Global Round {ep_g}/{args.epochs_global}, Task {task_id} ---')
-        
-        # === Phân phối Global Model về các Edges ===
-        global_weights = cloud_server.get_weights()
-        for edge in edge_servers:
-            edge.set_weights(global_weights)
-        
-        # === Edge Training (WTO + Data Collection + FCIL) ===
-        edge_weights = []
-        edge_samples = []
-        task_classes = get_task_classes(task_id, args.num_base_classes, args.task_size)
-        
-        for edge in edge_servers:
-            # Huấn luyện tại Edge (Giai đoạn 4)
-            weights, num_samples = edge.train_local(
-                clients_dict=clients_dict,
-                global_round=ep_g,
-                task_id=task_id,
-                task_classes=task_classes,
-                current_f1_scores=current_f1_scores,
-                epochs=args.epochs_local,
-                lr=current_lr,
-                batch_size=args.batch_size
-            )
-            if weights:
-                edge_weights.append(weights)
-                edge_samples.append(num_samples)
-        
-        # === Cloud-level Global Aggregation ===
-        if edge_weights:
-            global_weights_new = cloud_server.aggregate_from_edges(edge_weights, edge_samples)
-            model_g.load_state_dict(global_weights_new)
-        
-        # Cập nhật cloud server state
-        cloud_server.model.load_state_dict(model_g.state_dict())
-        # cloud_server.update_monitor(pool_grad if pool_grad else None) # Prototype gradient sharing tạm bỏ qua để đơn giản hóa
-        
-        # === Đánh giá Định kỳ (Sec VI.B: e=5) ===
-        if ep_g == 0 or (ep_g + 1) % args.eval_interval == 0 or ep_g == args.epochs_global - 1:
-            acc = model_global_eval(
-                model_g, test_dataset, task_id, args.task_size,
-                args.num_base_classes, args.device
-            )
-            accuracy_history.append(acc)
-            logger.info(f'  Task {task_id}, Round {ep_g}: Accuracy = {acc:.2f}%')
-            
-            # Lưu accuracy phục vụ tính Forgetting
-            results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
-            task_accuracies_per_class[ep_g] = {
-                i: f1 for i, f1 in enumerate(results['per_class_f1'])
-            }
-        
-        old_task_id = task_id
-    
+                edge.set_weights(global_weights)
+
+            # === Edge Training (WTO + Data Collection + FCIL) ===
+            edge_weights = []
+            edge_samples = []
+
+            for edge in edge_servers:
+                weights, num_samples = edge.train_local(
+                    clients_dict=clients_dict,
+                    global_round=global_round,
+                    task_id=task_id,
+                    task_classes=task_classes,
+                    current_f1_scores=current_f1_scores,
+                    epochs=args.epochs_local,
+                    lr=current_lr,
+                    batch_size=args.batch_size
+                )
+                if weights:
+                    edge_weights.append(weights)
+                    edge_samples.append(num_samples)
+
+            # === Cloud-level Global Aggregation ===
+            if edge_weights:
+                global_weights_new = cloud_server.aggregate_from_edges(edge_weights, edge_samples)
+                model_g.load_state_dict(global_weights_new)
+
+            # Cập nhật cloud server state
+            cloud_server.model.load_state_dict(model_g.state_dict())
+
+            # === Đánh giá Định kỳ (Sec VI.B: every 5 rounds) ===
+            is_first_round = (round_in_task == 0 and task_id == 0)
+            is_eval_round = (round_in_task + 1) % args.eval_interval == 0
+            is_last_round_of_task = (round_in_task == num_rounds - 1)
+
+            if is_first_round or is_eval_round or is_last_round_of_task:
+                acc = model_global_eval(
+                    model_g, test_dataset, task_id, args.task_size,
+                    args.num_base_classes, args.device
+                )
+                accuracy_history.append(acc)
+                logger.info(f'  [Eval] Task {task_id}, Round {round_in_task + 1}: '
+                            f'Accuracy = {acc:.2f}%')
+
+                # Lưu accuracy phục vụ tính Forgetting
+                results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
+                task_accuracies_per_class[global_round] = {
+                    i: f1 for i, f1 in enumerate(results['per_class_f1'])
+                }
+
     # === Kết thúc: Đánh giá cuối cùng & Forgetting Metric ===
     from evaluate import compute_forgetting
     avg_forgetting = compute_forgetting(task_accuracies_per_class)
