@@ -56,12 +56,19 @@ def setup_logging(log_dir, args):
     
     log_file = os.path.join(run_log_dir, "training.log")
     
+    # Đảm bảo stdout xử lý được Unicode trên Windows
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
         handlers=[
             logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
+            logging.StreamHandler(sys.stdout)
         ]
     )
     return logging.getLogger('HFIN')
@@ -93,10 +100,18 @@ def main():
         args.data_path, args.dataset, max_samples=max_samples
     )
     num_features = X_train.shape[1]
-    args.total_classes = len(label_map)
+    # QUAN TRONG: dem so class ID duy nhat, KHONG dung len(label_map)
+    # vi label_map co alias (backdoor/backdoors, infiltration/infilteration)
+    num_unique_classes = len(set(label_map.values()))
+    if args.total_classes != num_unique_classes:
+        logger.warning(
+            f'CANH BAO: total_classes trong config ({args.total_classes}) != '
+            f'so class ID duy nhat ({num_unique_classes}). Dung {num_unique_classes}.'
+        )
+        args.total_classes = num_unique_classes
     logger.info(f'Features: {num_features}, Train: {len(X_train)}, Test: {len(X_test)}')
-    logger.info(f'Label map: {label_map}')
-    logger.info(f'Updated total_classes to {args.total_classes} to match actual dataset!')
+    logger.info(f'Total classes (unique IDs): {args.total_classes}')
+    logger.info(f'Label map ({len(label_map)} names -> {args.total_classes} unique IDs): {label_map}')
     
     # Test dataset (dùng chung cho đánh giá)
     test_dataset = NetFlowDataset(X_test, y_test)
@@ -187,11 +202,6 @@ def main():
         # Số rounds cho task này (Sec VI.B)
         num_rounds = args.epochs_base if task_id == 0 else args.epochs_incremental
 
-        # === Chuẩn bị model cho task mới ===
-        # WA: Weight Aligning (Eq. 9) trước khi mở rộng
-        if task_id > 0:
-            model_g.weight_align(classes_learned - args.task_size, classes_learned)
-
         # Cập nhật số lớp đã học
         classes_learned = len(task_classes) if task_id == 0 else classes_learned + len(task_classes)
 
@@ -272,6 +282,37 @@ def main():
                 task_accuracies_per_class[global_round] = {
                     i: f1 for i, f1 in enumerate(results['per_class_f1'])
                 }
+
+        # === SAU KHI KẾT THÚC CÁC VÒNG CỦA TASK: WA (Weight Aligning) ===
+        # Theo Section IV.C: WA dùng để loại bỏ bias sau quá trình local training
+        if task_id > 0:
+            # Diagnostic: Log weight norms before WA
+            with torch.no_grad():
+                weights = model_g.fc.weight.data
+                old_norm = torch.norm(weights[:classes_learned-len(task_classes)], p=2, dim=1).mean().item()
+                new_norm = torch.norm(weights[classes_learned-len(task_classes):classes_learned], p=2, dim=1).mean().item()
+                logger.info(f'  [WA-Pre] Avg Norm: Old Classes = {old_norm:.4f}, New Classes = {new_norm:.4f}')
+
+            logger.info(f'  [WA] Applying Weight Aligning for Task {task_id}...')
+            model_g.weight_align(classes_learned - len(task_classes), classes_learned)
+            
+            # Diagnostic: Log weight norms after WA
+            with torch.no_grad():
+                weights = model_g.fc.weight.data
+                old_norm_post = torch.norm(weights[:classes_learned-len(task_classes)], p=2, dim=1).mean().item()
+                new_norm_post = torch.norm(weights[classes_learned-len(task_classes):classes_learned], p=2, dim=1).mean().item()
+                logger.info(f'  [WA-Post] Avg Norm: Old Classes = {old_norm_post:.4f}, New Classes = {new_norm_post:.4f}')
+
+            # Đánh giá lại sau WA để xem hiệu quả
+            acc_post = model_global_eval(
+                model_g, test_dataset, task_id, args.task_size,
+                args.num_base_classes, args.device
+            )
+            logger.info(f'  [Eval-Post-WA] Task {task_id}: Accuracy jump {accuracy_history[-1]:.2f}% -> {acc_post:.2f}%')
+            accuracy_history[-1] = acc_post # Cập nhật kết quả cuối cùng của task
+
+            # Cập nhật lại cloud server với các trọng số đã được align
+            cloud_server.model.load_state_dict(model_g.state_dict())
 
     # === Kết thúc: Đánh giá cuối cùng & Forgetting Metric ===
     from evaluate import compute_forgetting

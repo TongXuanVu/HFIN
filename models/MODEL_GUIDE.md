@@ -29,4 +29,3 @@ Tài liệu này tổng hợp các chi tiết kỹ thuật về kiến trúc mô
   - Kết quả: Mô hình duy trì khả năng nhận diện cân bằng giữa tấn công cũ và mới.
 
 ---
-**Trạng thái**: Hoàn thành Giai đoạn 2. Mô hình đã sẵn sàng cho logic huấn luyện thực tế.

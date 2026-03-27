@@ -48,7 +48,4 @@ Hệ thống hỗ trợ 2 bộ dữ liệu mạng chuẩn NetFlow v2:
 - **Kết quả**:
   - **Heatmap**: Thể hiện số lượng mẫu của từng lớp trên mỗi Client.
   - **Stacked Bar Chart**: Thể hiện tỷ lệ phần trăm (distribution %) của các lớp trên toàn bộ 60 Clients.
-  - Kết quả lưu tại thư mục `./plots/` và được tổng hợp trong `walkthrough.md`.
-
----
-**Trạng thái**: Hoàn thành 100% phần Dataset. Sẵn sàng cho giai đoạn huấn luyện Federated Learning.
+  - Kết quả lưu tại thư mục `./plots/`.

@@ -95,37 +95,32 @@ class EdgeServer:
         X_train = torch.cat(all_data)
         y_train = torch.cat(all_labels)
 
-        # 3. Model Expansion (nếu bắt đầu task mới)
+        # 3. Phát hiện task mới — chỉ chạy 1 lần đầu task
         if task_id > self.task_id_old:
             self.task_id_old = task_id
-            # Lưu model cũ để distillation
+            # Lưu model cũ để KD distillation
             self.old_model = copy.deepcopy(self.model)
             self.old_model.eval()
-            
-        # 3. Huấn luyện FCIL tại Edge
-        # self.model đã được đồng bộ từ model_g trong main.py
+            # Cập nhật learned_classes CHỈ 1 LẦN khi chuyển task mới
+            # (không đặt ngoài block này vì sẽ bị gọi lặp mỗi round)
+            self.learned_classes = list(range(
+                len(task_classes) if task_id == 1
+                else self.model.fc.out_features - len(task_classes)
+            ))
+
         if self.old_model is not None:
             self.old_model.eval()
-        
-        # Kiểm tra nhãn dữ liệu có khớp với model không (bảo vệ lỗi runtime)
+
+        # Kiểm tra nhãn dữ liệu có khớp với model không
         if len(y_train) > 0:
             max_label = int(y_train.max().item())
             if max_label >= self.model.fc.out_features:
-                logger.warning(f"Label {max_label} out of range for model size {self.model.fc.out_features} at Edge {self.edge_id}!")
-        
-        # Cập nhật learned_classes
-        if task_id > 0:
-            self.learned_classes.extend(task_classes)
-        
-        # Mở rộng Classification Head (nếu cần)
-        if len(y_train) > 0:
-            max_label = int(y_train.max().item())
-            print(f"DEBUG [Edge {self.edge_id}] task_id={task_id} max_label={max_label} current_out={self.model.fc.out_features}")
-            if max_label >= self.model.fc.out_features:
-                new_num_classes = max_label + 1
-                print(f"DEBUG [Edge {self.edge_id}] Expanding model to {new_num_classes}")
-                self.model.Incremental_learning(new_num_classes)
-        
+                logger.warning(
+                    f"Edge {self.edge_id}: Label {max_label} >= "
+                    f"model out_features {self.model.fc.out_features}. "
+                    f"Model expansion may be missing."
+                )
+
         # 4. Mix với Exemplar Data (Replay)
         exemplar_data, exemplar_labels = self.exemplar_manager.get_exemplar_data()
         if exemplar_data:
@@ -147,27 +142,27 @@ class EdgeServer:
         # 5. Training Loop
         dataset = NetFlowDataset(X_train, y_train)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        
+
         self.model = model_to_device(self.model, self.device)
         self.model.train()
-        
+
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-5)
-        
+
         for epoch in range(epochs):
             for _, features, targets in loader:
                 features, targets = features.to(self.device), targets.to(self.device)
-                
+
                 outputs = self.model(features)
-                
-                # KD Loss
+
+                # KD Loss (Theo Eq. 7 bài báo, lambdas=1, không sử dụng class_weight)
                 old_outputs = self.old_model(features) if self.old_model else None
                 loss = distillation_loss(
-                    outputs, old_outputs, targets, 
-                    self.model.fc.out_features, 
+                    outputs, old_outputs, targets,
+                    self.model.fc.out_features,
                     self.old_model.fc.out_features if self.old_model else 0,
                     self.device
                 )
-                
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()

@@ -22,18 +22,19 @@ TASK_CONFIGS = {
     'nf_ton_iot': {
         'total_classes': 10,
         'schedules': {
-            'task2': {'base': 2, 'step': 2, 'num_tasks': 4},   # 2 + 2*4 = 10 (Task 0: Benign, Scanning)
+            'task2': {'base': 2, 'step': 2, 'num_tasks': 4},   # 2 + 2*4 = 10
             'task5': {'base': 5, 'step': 5, 'num_tasks': 1},   # 5 + 5 = 10
         },
         'default_schedule': 'task2'
     },
-    # --- NF-UQ-NIDS-v2: 21 class (1 Benign + 20 attack) ---
+    # --- NF-UQ-NIDS-v2: 20 class (1 Benign + 19 attack) ---
+    # ID thực tế trong data: 0-19 (label_map: web-sql/bfa/xss đều → 20, nhưng 20 không tồn tại)
     'nf_uq_nids': {
-        'total_classes': 21,
+        'total_classes': 20,
         'schedules': {
-            'task2':  {'base': 2, 'step': 2,  'num_tasks': 10}, # 2 + 2*9 + 1 = 21 (Task 0: Benign, DDoS)
-            'task4':  {'base': 1, 'step': 4,  'num_tasks': 5},
-            'task10': {'base': 1, 'step': 10, 'num_tasks': 2},
+            'task2':  {'base': 2, 'step': 2,  'num_tasks': 9},   # 2 + 2*9 = 20
+            'task4':  {'base': 4, 'step': 4,  'num_tasks': 4},   # 4 + 4*4 = 20
+            'task10': {'base': 10, 'step': 10, 'num_tasks': 1},  # 10 + 10 = 20
         },
         'default_schedule': 'task2'
     }

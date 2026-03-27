@@ -43,7 +43,7 @@ def args_parser():
     parser.add_argument('--total_classes', type=int, default=10,
                         help='Tổng số class: nf_ton_iot=10, nf_uq_nids=21')
     parser.add_argument('--memory_size', type=int, default=500,
-                        help='Kích thước bộ nhớ exemplar tại Edge Server (Mục VI.B: 500)')
+                        help='Kích thước bộ nhớ exemplar tại Edge Server (Paper: 500)')
 
     # === Federated Learning ===
     parser.add_argument('--num_clients', type=int, default=60,
@@ -68,10 +68,10 @@ def args_parser():
                         help='Số epochs huấn luyện local mỗi round')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='Batch size')
-    parser.add_argument('--learning_rate', type=float, default=0.01,
-                        help='Learning rate base task (Mục VI.B: 1e-2)')
-    parser.add_argument('--lr_incremental', type=float, default=0.02,
-                        help='Learning rate incremental task (Mục VI.B: 2e-2)')
+    parser.add_argument('--learning_rate', type=float, default=0.001,
+                        help='Learning rate base task (Mục VI.B: 1e-2, user đề xuất: 1e-3)')
+    parser.add_argument('--lr_incremental', type=float, default=0.001,
+                        help='Learning rate incremental task (Mục VI.B: 2e-2, user đề xuất: 1e-3)')
     parser.add_argument('--weight_decay', type=float, default=5e-4,
                         help='Weight decay (Mục VI.B: 5e-4)')
     parser.add_argument('--momentum', type=float, default=0.9,
