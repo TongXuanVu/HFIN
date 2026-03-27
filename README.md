@@ -29,8 +29,8 @@ graph TD
     Cloud <-->|Model Weights| Edge2
     Edge1 -.->|WTO Selection| C1
     Edge2 -.->|WTO Selection| C2
-    C1 == Raw Data ==> Edge1
-    C2 == Raw Data ==> Edge2
+    C1 == Data ==> Edge1
+    C2 == Data ==> Edge2
 ```
 
 ---
