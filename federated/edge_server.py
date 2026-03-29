@@ -56,7 +56,7 @@ class EdgeServer:
 
     def train_local(self, clients_dict, global_round, task_id, 
                     task_classes, current_f1_scores, 
-                    epochs=5, lr=0.01, batch_size=32):
+                    epochs=5, lr=0.01, batch_size=32, is_last_round=False):
         """
         Thực hiện huấn luyện cục bộ tại Edge Server (Giai đoạn 4).
         
@@ -66,6 +66,8 @@ class EdgeServer:
             task_id: ID của task incremental
             task_classes: List các lớp thuộc task hiện tại
             current_f1_scores: Dict F1 scores từ round trước (cho WTO)
+            is_last_round: True nếu đây là round cuối của task hiện tại
+                           → chỉ khi này mới cập nhật Exemplar Memory
         """
         # 1. WTO: Chọn lọc clients truyền dữ liệu dựa trên Priority
         client_infos = []
@@ -121,26 +123,55 @@ class EdgeServer:
                     f"Model expansion may be missing."
                 )
 
-        # 4. Mix với Exemplar Data (Replay)
+        # 4. Mix với Exemplar Data (Replay) + Balanced Sampling
         exemplar_data, exemplar_labels = self.exemplar_manager.get_exemplar_data()
+        is_old = [] # Track which samples are old for Selective KD
+        
+        # Nhãn mới từ client — lưu số lượng TRƯỚC khi concat
+        num_new_samples = len(X_train)
+        is_old.extend([False] * num_new_samples)
+        
         if exemplar_data:
-            # exemplar_data: list of list of np.arrays
-            # exemplar_labels: list of int
             all_x_exemplar = []
             all_y_exemplar = []
             for i, cls_samples in enumerate(exemplar_data):
-                # cls_samples là list các array (N, features)
                 cls_x = np.array(cls_samples)
                 all_x_exemplar.append(cls_x)
                 all_y_exemplar.append(np.full(len(cls_samples), exemplar_labels[i]))
             
             flat_exemplar_data = torch.FloatTensor(np.concatenate(all_x_exemplar))
             flat_exemplar_labels = torch.LongTensor(np.concatenate(all_y_exemplar))
+            
+            # --- BALANCED REPLAY OPTIMIZATION ---
+            # Nếu dữ liệu mới quá nhiều, oversample dữ liệu cũ để cân bằng Batch
+            num_new = len(X_train)
+            num_old = len(flat_exemplar_data)
+            
+            if num_old > 0 and num_new > num_old:
+                repeat_factor = num_new // num_old
+                if repeat_factor > 1:
+                    logger.info(f"Edge {self.edge_id}: Oversampling memory by {repeat_factor}x to balance {num_new} new samples.")
+                    flat_exemplar_data = flat_exemplar_data.repeat(repeat_factor, 1)
+                    flat_exemplar_labels = flat_exemplar_labels.repeat(repeat_factor)
+            
+            is_old.extend([True] * len(flat_exemplar_data))
             X_train = torch.cat([X_train, flat_exemplar_data])
             y_train = torch.cat([y_train, flat_exemplar_labels])
 
+        is_old = torch.BoolTensor(is_old)
+
         # 5. Training Loop
-        dataset = NetFlowDataset(X_train, y_train)
+        # Chỉnh sửa NetFlowDataset để trả về cả is_old flag
+        class BalancedDataset(torch.utils.data.Dataset):
+            def __init__(self, x, y, is_old_mask):
+                self.x = x
+                self.y = y
+                self.is_old = is_old_mask
+            def __len__(self): return len(self.y)
+            def __getitem__(self, idx):
+                return self.x[idx], self.y[idx], self.is_old[idx]
+
+        dataset = BalancedDataset(X_train, y_train, is_old)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         self.model = model_to_device(self.model, self.device)
@@ -149,18 +180,19 @@ class EdgeServer:
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-5)
 
         for epoch in range(epochs):
-            for _, features, targets in loader:
-                features, targets = features.to(self.device), targets.to(self.device)
+            for features, targets, mask in loader:
+                features, targets, mask = features.to(self.device), targets.to(self.device), mask.to(self.device)
 
                 outputs = self.model(features)
 
-                # KD Loss (Theo Eq. 7 bài báo, lambdas=1, không sử dụng class_weight)
+                # KD Loss (Selective: chỉ áp dụng cho mask=True)
                 old_outputs = self.old_model(features) if self.old_model else None
                 loss = distillation_loss(
                     outputs, old_outputs, targets,
                     self.model.fc.out_features,
                     self.old_model.fc.out_features if self.old_model else 0,
-                    self.device
+                    self.device,
+                    is_old_mask=mask
                 )
 
                 optimizer.zero_grad()
@@ -168,22 +200,32 @@ class EdgeServer:
                 optimizer.step()
 
         # 6. Cập nhật Exemplar Memory sau khi huấn luyện xong task
-        # Trong HFIN/iCaRL, bộ nhớ mẫu được chia đều cho tất cả các lớp đã học
-        # Tính toán số lượng mẫu cho mỗi lớp (m)
-        total_learned_classes = len(self.exemplar_manager.exemplar_set) + len(task_classes)
-        m = self.exemplar_manager.memory_size // total_learned_classes
-        
-        # Giảm số lượng mẫu của các lớp cũ
-        self.exemplar_manager.reduce_exemplar_sets(m)
-        
-        # Thêm mẫu cho các lớp mới
-        for cls in np.unique(y_train.cpu().numpy()):
-            if cls in task_classes:
-                class_mask = (y_train == cls)
-                cls_data = X_train[class_mask].cpu().numpy()
-                self.exemplar_manager.construct_exemplar_set(
-                    cls_data, int(cls), self.model, self.device, m=m
-                )
+        # *** BUG FIX: Chỉ chạy 1 lần vào round CUỐI của mỗi task ***
+        # Nếu chạy mỗi round → memory bị reduce 80 lần/task → lớp cũ bị xóa sạch
+        if is_last_round:
+            # Trong HFIN/iCaRL, bộ nhớ mẫu được chia đều cho tất cả các lớp đã học
+            # Tính toán số lượng mẫu cho mỗi lớp (m)
+            total_learned_classes = len(self.exemplar_manager.exemplar_set) + len(task_classes)
+            m = self.exemplar_manager.memory_size // total_learned_classes
+            
+            # Giảm số lượng mẫu của các lớp cũ
+            self.exemplar_manager.reduce_exemplar_sets(m)
+            
+            # Thêm mẫu cho các lớp mới từ dữ liệu huấn luyện
+            # Dùng num_new_samples (đã lưu trước concat) để tránh lấy exemplar cũ
+            new_class_data_x = X_train[:num_new_samples]
+            new_class_data_y = y_train[:num_new_samples]
+            
+            for cls in np.unique(new_class_data_y.cpu().numpy()):
+                if cls in task_classes:
+                    class_mask = (new_class_data_y == cls)
+                    cls_data = new_class_data_x[class_mask].cpu().numpy()
+                    self.exemplar_manager.construct_exemplar_set(
+                        cls_data, int(cls), self.model, self.device, m=m
+                    )
+            logger.info(f"Edge {self.edge_id}: Memory updated at end of task. "
+                        f"Total stored: {self.exemplar_manager.total_stored_samples} samples "
+                        f"across {self.exemplar_manager.num_stored_classes} classes.")
 
         # Trả về đồng thời trọng số và số mẫu huấn luyện (cho FedWeightedAvg)
         return self.get_weights(), len(X_train)

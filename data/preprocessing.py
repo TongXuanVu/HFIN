@@ -158,7 +158,10 @@ def load_and_preprocess(data_path, dataset_name='nf_ton_iot',
     else:
         print(f'[INFO] Đọc file CSV: {data_path}')
         # Optimize: Dùng nrows nếu max_samples được cung cấp để tránh load 13GB vào RAM
-        if max_samples:
+        if dataset_name == 'nf_uq_nids' and (not max_samples or max_samples == 0):
+            print(f'[WARN] Dataset {dataset_name} quá lớn (13.7GB). Tự động giới hạn đọc 500,000 dòng để tránh treo máy.')
+            df = pd.read_csv(data_path, nrows=500000)
+        elif max_samples and max_samples > 0:
             # Lấy dư ra một chút (5x) để đảm bảo có đủ mẫu sau khi downsample các lớp hiếm
             df = pd.read_csv(data_path, nrows=max_samples * 5)
         else:

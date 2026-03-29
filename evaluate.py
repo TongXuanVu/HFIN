@@ -62,36 +62,75 @@ def evaluate_model(model, test_dataset, classes, device, batch_size=256):
     return results
 
 
-def plot_confusion_matrix(y_true, y_pred, class_names, save_path, title='Confusion Matrix'):
+def plot_confusion_matrix(y_true, y_pred, class_names, save_path, dataset_name=None, title=None):
     """Vẽ và lưu confusion matrix"""
     cm = confusion_matrix(y_true, y_pred)
     
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=class_names, yticklabels=class_names)
+    
+    if not title:
+        title = f'HFIN Confusion Matrix ({dataset_name})' if dataset_name else 'HFIN Confusion Matrix'
     plt.title(title)
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
-    print(f'  [Eval] Confusion matrix saved: {save_path}')
 
 
-def plot_accuracy_curve(task_accuracies, save_path):
-    """Vẽ accuracy qua các task"""
+def plot_accuracy_curve(rounds, accuracies, save_path, dataset_name=None):
+    """
+    Vẽ accuracy qua các task
+    """
     plt.figure(figsize=(10, 6))
     
-    rounds = list(range(len(task_accuracies)))
-    plt.plot(rounds, task_accuracies, 'b-o', linewidth=2, markersize=4)
-    plt.xlabel('Global Round')
+    plt.plot(rounds, accuracies, 'b-o', linewidth=2, markersize=4)
+    plt.xlabel('Task')
     plt.ylabel('Accuracy (%)')
-    plt.title('HFIN - Global Accuracy Over Rounds')
+    title = f'HFIN Accuracy ({dataset_name})' if dataset_name else 'HFIN Accuracy'
+    plt.title(title)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
-    print(f'  [Eval] Accuracy curve saved: {save_path}')
+
+
+def plot_metrics_curves(x_values, metrics_dict, save_path, xlabel='Task', dataset_name=None):
+    """
+    Vẽ nhiều chỉ số cùng lúc
+    
+    Args:
+        x_values: list các giá trị trục X (Task ID hoặc Task.Progress)
+        metrics_dict: dict {name: [values]}
+        save_path: đường dẫn lưu file
+        xlabel: nhãn trục X
+        dataset_name: tên dataset để hiển thị trên title
+    """
+    plt.figure(figsize=(12, 7))
+    
+    styles = {
+        'Accuracy': 'b-',
+        'Macro-F1': 'g--',
+        'Weighted-F1': 'r:'
+    }
+    
+    for name, values in metrics_dict.items():
+        if not values: continue
+        style = styles.get(name, '-')
+        plt.plot(x_values, values, style, label=name, linewidth=2)
+        plt.plot(x_values, values, style[0]+'o', markersize=4)
+
+    plt.xlabel(xlabel)
+    plt.ylabel('Score (%)')
+    title = f'HFIN Performance ({dataset_name})' if dataset_name else 'HFIN Performance'
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
 
 
 def compute_forgetting(task_accuracies_per_class):
@@ -99,7 +138,7 @@ def compute_forgetting(task_accuracies_per_class):
     Tính forgetting metric: accuracy drop trên lớp cũ sau khi học lớp mới
     
     Args:
-        task_accuracies_per_class: dict {task_id: {class_id: accuracy}}
+        task_accuracies_per_class: dict {global_round: {class_id: accuracy}}
     
     Returns:
         avg_forgetting: float
@@ -108,36 +147,50 @@ def compute_forgetting(task_accuracies_per_class):
         return 0.0
 
     forgetting_values = []
-    task_ids = sorted(task_accuracies_per_class.keys())
+    # global_round keys
+    round_ids = sorted(task_accuracies_per_class.keys())
 
-    for i in range(len(task_ids) - 1):
-        current_task = task_ids[i]
-        # Lấy max accuracy của lớp này qua tất cả tasks trước
-        for class_id in task_accuracies_per_class[current_task]:
-            max_prev_acc = task_accuracies_per_class[current_task][class_id]
-            # So sánh với accuracy cuối cùng
-            final_task = task_ids[-1]
-            if class_id in task_accuracies_per_class.get(final_task, {}):
-                final_acc = task_accuracies_per_class[final_task][class_id]
-                forgetting_values.append(max_prev_acc - final_acc)
+    # Duyệt qua từng lớp đã từng xuất hiện
+    all_classes = set()
+    for r in round_ids:
+        all_classes.update(task_accuracies_per_class[r].keys())
+    
+    for class_id in all_classes:
+        # Tìm round mà lớp này đạt accuracy cao nhất
+        class_accuracies = []
+        for r in round_ids:
+            if class_id in task_accuracies_per_class[r]:
+                class_accuracies.append(task_accuracies_per_class[r][class_id])
+        
+        if len(class_accuracies) > 1:
+            max_acc = max(class_accuracies[:-1]) # Max của các lần trước
+            final_acc = class_accuracies[-1]    # Lần cuối cùng
+            forgetting_values.append(max_acc - final_acc)
 
     return np.mean(forgetting_values) if forgetting_values else 0.0
 
 
-def print_evaluation_report(results, task_id, label_map=None):
-    """In báo cáo đánh giá"""
-    print(f'\n{"="*60}')
-    print(f'  ĐÁNH GIÁ - Task {task_id}')
-    print(f'{"="*60}')
-    print(f'  Accuracy:     {results["accuracy"]:.2f}%')
-    print(f'  F1 (macro):   {results["f1_macro"]:.2f}%')
-    print(f'  F1 (weighted):{results["f1_weighted"]:.2f}%')
+def print_evaluation_report(results, task_id, label_map=None, logger=None):
+    """In báo cáo đánh giá chi tiết định dạng theo yêu cầu bài báo"""
+    msg = []
+    msg.append('\n' + '='*60)
+    msg.append(f'  ĐÁNH GIÁ - Task {task_id}')
+    msg.append('='*60)
+    msg.append(f'  Accuracy:     {results["accuracy"]:.2f}%')
+    msg.append(f'  F1 (macro):   {results["f1_macro"]:.2f}%')
+    msg.append(f'  F1 (weighted):{results["f1_weighted"]:.2f}%')
 
     if label_map:
         inv_map = {v: k for k, v in label_map.items()}
-        print(f'\n  Per-class F1:')
+        msg.append(f'\n  Per-class F1:')
         for i, f1 in enumerate(results['per_class_f1']):
             name = inv_map.get(i, f'Class {i}')
-            print(f'    {name:20s}: {f1:.2f}%')
+            msg.append(f'    {name:20s}: {f1:.2f}%')
 
-    print(f'{"="*60}\n')
+    msg.append('='*60 + '\n')
+    
+    report_text = '\n'.join(msg)
+    if logger:
+        logger.info(report_text)
+    else:
+        print(report_text)

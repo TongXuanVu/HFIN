@@ -19,8 +19,8 @@ def args_parser():
                         help='Đường dẫn thư mục chứa file CSV dataset')
     parser.add_argument('--num_features', type=int, default=43,
                         help='Số features NetFlow (43 features chuẩn)')
-    parser.add_argument('--max_samples', type=int, default=0,
-                        help='Giới hạn mẫu (0 = lấy hết). Dùng khi RAM hạn chế')
+    parser.add_argument('--max_samples', type=int, default=100000,
+                        help='Giới hạn mẫu (0 = lấy hết). Mặc định 100k để tránh treo máy với UQ-NIDS')
     parser.add_argument('--test_size', type=float, default=0.4,
                         help='Tỷ lệ test set (0.4 = 60/40 theo Mục VI.B)')
 
@@ -100,8 +100,8 @@ def args_parser():
     # === Khác ===
     parser.add_argument('--seed', type=int, default=2024,
                         help='Random seed')
-    parser.add_argument('--eval_interval', type=int, default=5,
-                        help='Số global rounds giữa mỗi lần đánh giá (Mục VI.B: 5)')
+    parser.add_argument('--eval_interval', type=int, default=10,
+                        help='Số global rounds giữa mỗi lần đánh giá')
     parser.add_argument('--device', type=str, default='auto',
                         help='Device: auto, cpu, cuda, cuda:0, ...')
     parser.add_argument('--log_dir', type=str, default='./logs/',

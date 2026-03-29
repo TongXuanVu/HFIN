@@ -37,7 +37,10 @@ from federated.fed_utils import (
     setup_seed, model_to_device, FedAvg,
     model_global_eval, get_task_classes, get_all_learned_classes
 )
-from evaluate import evaluate_model, plot_accuracy_curve, plot_confusion_matrix, print_evaluation_report
+from evaluate import (
+    evaluate_model, plot_confusion_matrix, 
+    print_evaluation_report, plot_metrics_curves
+)
 
 
 def setup_logging(log_dir, args):
@@ -187,6 +190,11 @@ def main():
     # === Training Loop (Task-based) ===
     logger.info('\n[4/4] Starting training...')
     accuracy_history = []
+    f1_macro_history = []
+    f1_weighted_history = []
+    eval_round_history = []
+    task_progress_history = []
+    
     task_accuracies_per_class = {}  # Lưu accuracy từng lớp theo round để tính forgetting
     classes_learned = args.num_base_classes
     current_f1_scores = {i: 0.9 for i in range(args.total_classes)}
@@ -236,6 +244,11 @@ def main():
             for edge in edge_servers:
                 edge.set_weights(global_weights)
 
+            # Xác định sớm các cờ vòng lặp cần thiết cho Edge training
+            is_first_round = (round_in_task == 0 and task_id == 0)
+            is_eval_round = (round_in_task + 1) % args.eval_interval == 0
+            is_last_round_of_task = (round_in_task == num_rounds - 1)
+
             # === Edge Training (WTO + Data Collection + FCIL) ===
             edge_weights = []
             edge_samples = []
@@ -249,7 +262,8 @@ def main():
                     current_f1_scores=current_f1_scores,
                     epochs=args.epochs_local,
                     lr=current_lr,
-                    batch_size=args.batch_size
+                    batch_size=args.batch_size,
+                    is_last_round=is_last_round_of_task
                 )
                 if weights:
                     edge_weights.append(weights)
@@ -263,24 +277,37 @@ def main():
             # Cập nhật cloud server state
             cloud_server.model.load_state_dict(model_g.state_dict())
 
-            # === Đánh giá Định kỳ (Sec VI.B: every 5 rounds) ===
-            is_first_round = (round_in_task == 0 and task_id == 0)
-            is_eval_round = (round_in_task + 1) % args.eval_interval == 0
-            is_last_round_of_task = (round_in_task == num_rounds - 1)
-
             if is_first_round or is_eval_round or is_last_round_of_task:
-                acc = model_global_eval(
-                    model_g, test_dataset, task_id, args.task_size,
-                    args.num_base_classes, args.device
-                )
+                results_eval = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
+                acc = results_eval['accuracy']
+                f1_macro = results_eval['f1_macro']
+                f1_weighted = results_eval['f1_weighted']
+                
                 accuracy_history.append(acc)
-                logger.info(f'  [Eval] Task {task_id}, Round {round_in_task + 1}: '
-                            f'Accuracy = {acc:.2f}%')
+                f1_macro_history.append(f1_macro)
+                f1_weighted_history.append(f1_weighted)
+                eval_round_history.append(global_round)
+                
+                # Tính toán Task progress: task_id + (round_hien_tai / tong_so_round_cua_task)
+                # Ví dụ: Task 0 kết thúc ở round 2/2 -> task_progress = 0 + 2/2 = 1.0
+                task_progress = task_id + (round_in_task + 1) / num_rounds
+                task_progress_history.append(task_progress)
+                
+                logger.info(
+                    f'  [Eval] Task {task_id}, Round {round_in_task + 1}: '
+                    f'Accuracy = {acc:.2f}%  '
+                    f'Macro-F1 = {f1_macro:.2f}%  '
+                    f'Weighted-F1 = {f1_weighted:.2f}%'
+                )
 
                 # Lưu accuracy phục vụ tính Forgetting
-                results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
                 task_accuracies_per_class[global_round] = {
-                    i: f1 for i, f1 in enumerate(results['per_class_f1'])
+                    i: f1 for i, f1 in enumerate(results_eval['per_class_f1'])
+                }
+
+                # Cập nhật F1 scores cho WTO ở round tiếp theo
+                current_f1_scores = {
+                    i: float(f1) for i, f1 in enumerate(results_eval['per_class_f1'])
                 }
 
         # === SAU KHI KẾT THÚC CÁC VÒNG CỦA TASK: WA (Weight Aligning) ===
@@ -308,38 +335,59 @@ def main():
                 model_g, test_dataset, task_id, args.task_size,
                 args.num_base_classes, args.device
             )
-            logger.info(f'  [Eval-Post-WA] Task {task_id}: Accuracy jump {accuracy_history[-1]:.2f}% -> {acc_post:.2f}%')
-            accuracy_history[-1] = acc_post # Cập nhật kết quả cuối cùng của task
-
             # Cập nhật lại cloud server với các trọng số đã được align
             cloud_server.model.load_state_dict(model_g.state_dict())
+            
+            # Đánh giá lại sau WA để có F1 scores chuẩn cho task report cuối task
+            # Chỉ in report này nếu chưa phải task cuối (để tránh lặp vì đã có FINAL report sau loop)
+            final_task_results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
+            if task_id < num_tasks - 1:
+                print_evaluation_report(final_task_results, task_id, label_map, logger)
 
     # === Kết thúc: Đánh giá cuối cùng & Forgetting Metric ===
     from evaluate import compute_forgetting
     avg_forgetting = compute_forgetting(task_accuracies_per_class)
+    
+    # Tính Macro-F1 cuối cùng
+    final_classes_all = list(range(min(classes_learned, args.total_classes)))
+    final_results = evaluate_model(model_g, test_dataset, final_classes_all, args.device)
+    
     logger.info(f'\n{"="*60}')
     logger.info(f'  KẾT QUẢ CUỐI CÙNG')
-    logger.info(f'  Final Accuracy: {accuracy_history[-1]:.2f}%')
-    logger.info(f'  Avg Forgetting: {avg_forgetting:.2f}%')
+    logger.info(f'  Final Accuracy:      {final_results["accuracy"]:.2f}%')
+    logger.info(f'  Final Macro-F1:      {final_results["f1_macro"]:.2f}%')
+    logger.info(f'  Final Weighted-F1:   {final_results["f1_weighted"]:.2f}%')
+    logger.info(f'  Avg Forgetting:      {avg_forgetting:.2f}%')
     logger.info(f'{"="*60}')
     logger.info('\n' + '='*60)
     logger.info('TRAINING COMPLETED!')
     logger.info('='*60)
     
-    # Đánh giá chi tiết
+    # Đánh giá chi tiết cuối cùng (Final Summary)
     final_classes = list(range(min(classes_learned, args.total_classes)))
     results = evaluate_model(model_g, test_dataset, final_classes, args.device)
-    print_evaluation_report(results, task_id, label_map)
+    print_evaluation_report(results, "FINAL", label_map, logger)
     
-    # Vẽ biểu đồ
-    plot_accuracy_curve(accuracy_history, os.path.join(args.log_dir, 'accuracy_curve.png'))
+    # Vẽ biểu đồ tổng hợp Metrics (Sử dụng Task progression trên trục X)
+    metrics_dict = {
+        'Accuracy': accuracy_history,
+        'Macro-F1': f1_macro_history,
+        'Weighted-F1': f1_weighted_history
+    }
+    plot_metrics_curves(
+        task_progress_history, metrics_dict, 
+        os.path.join(args.log_dir, 'metrics_overall.png'),
+        xlabel='Task',
+        dataset_name=args.dataset
+    )
     
     inv_label_map = {v: k for k, v in label_map.items()}
     class_names = [inv_label_map.get(i, f'Class {i}') for i in final_classes]
     plot_confusion_matrix(
         results['y_true'], results['y_pred'], class_names,
         os.path.join(args.log_dir, 'confusion_matrix.png'),
-        title=f'HFIN Confusion Matrix - Task {task_id}'
+        dataset_name=args.dataset,
+        title=f'HFIN Confusion Matrix ({args.dataset}) - Final Task'
     )
     
     # Lưu model

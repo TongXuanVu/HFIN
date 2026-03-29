@@ -15,51 +15,36 @@ def get_one_hot(target, num_classes, device):
 
 
 def distillation_loss(outputs, old_outputs, targets, num_classes,
-                      old_num_classes, device, temperature=2.0, class_weight=None):
+                      old_num_classes, device, temperature=2.0, is_old_mask=None):
     """
-    Tính loss kết hợp theo Eq. 7 từ bài báo HFIN:
-    L = lambda1 * L_CE + lambda2 * L_KD
-
-    Trong đó:
-    lambda1 = n_new / (n_old + n_new)  (Tỷ lệ lớp mới)
-    lambda2 = n_old / (n_old + n_new)  (Tỷ lệ lớp cũ)
-
-    Args:
-        outputs: logits từ model hiện tại (batch, num_classes)
-        old_outputs: logits từ model cũ (batch, old_num_classes) hoặc None
-        targets: nhãn thật (batch,)
-        num_classes: tổng số lớp hiện tại (n_old + n_new)
-        old_num_classes: số lớp của model cũ (n_old)
-        device: str
-        temperature: temperature cho soft targets (T)
-        class_weight: Tensor trọng số lớp (num_classes,) để cân bằng imbalance, hoặc None
+    Tính loss kết hợp theo Eq. 7 từ bài báo HFIN, tối ưu hóa Selective KD.
     """
-    # 1. Classification loss (cross-entropy) - dùng class_weight nếu có
-    loss_ce = F.cross_entropy(outputs, targets, weight=class_weight)
+    # 1. Classification loss (cross-entropy) áp dụng cho TOÀN BỘ batch
+    loss_ce = F.cross_entropy(outputs, targets)
 
     if old_outputs is None or old_num_classes == 0:
         return loss_ce
 
-    # 2. Knowledge distillation loss (Eq. 11, 12)
-    # Sử dụng Softmax + Temperature
-    # p_old: soft targets từ model cũ
-    # p_new: soft predictions từ model mới (chỉ lấy phần các lớp cũ)
-    p_old = F.softmax(old_outputs / temperature, dim=1)
-    p_new = F.log_softmax(outputs[:, :old_num_classes] / temperature, dim=1)
+    # 2. Knowledge distillation loss (Selective KD)
+    # Lọc chỉ lấy các mẫu thuộc lớp cũ nếu có mask
+    if is_old_mask is not None and is_old_mask.sum() > 0:
+        p_old = F.softmax(old_outputs[is_old_mask] / temperature, dim=1)
+        p_new = F.log_softmax(outputs[is_old_mask, :old_num_classes] / temperature, dim=1)
+        # Nếu chỉ có ít mẫu cũ trong batch, KD loss sẽ bị nhỏ, cần scale lại
+        loss_kd = F.kl_div(p_new, p_old.detach(), reduction='batchmean') * (temperature ** 2)
+    elif is_old_mask is None:
+        # Fallback về tính toàn bộ batch nếu không có mask
+        p_old = F.softmax(old_outputs / temperature, dim=1)
+        p_new = F.log_softmax(outputs[:, :old_num_classes] / temperature, dim=1)
+        loss_kd = F.kl_div(p_new, p_old.detach(), reduction='batchmean') * (temperature ** 2)
+    else:
+        # Không có mẫu cũ nào trong batch
+        loss_kd = 0.0
+
+    # 3. Hệ số Lambdas (Theo bài báo HFIN lambda1=1.0, lambda2=1.0)
+    lambda1 = 1.0
+    lambda2 = 1.0
     
-    # KL Divergence là cách chuẩn để tính KD loss với softmax
-    loss_kd = F.kl_div(p_new, p_old.detach(), reduction='batchmean') * (temperature ** 2)
-    
-    # 3. Hệ số Lambdas (Theo bài báo HFIN - Eq. 7 thường là tổng trực tiếp hoặc lambdas=1)
-    # n_old = float(old_num_classes)
-    # n_new = float(num_classes - old_num_classes)
-    # n_total = float(num_classes)
-    
-    # Người dùng xác nhận bài báo sử dụng lambda1=1.0, lambda2=1.0 (như iCaRL)
-    lambda1 = 1.0  # Trọng số cho lớp mới
-    lambda2 = 1.0  # Trọng số cho lớp cũ (Distillation)
-    
-    # Kết hợp (Eq. 7)
     total_loss = lambda1 * loss_ce + lambda2 * loss_kd
     
     return total_loss
