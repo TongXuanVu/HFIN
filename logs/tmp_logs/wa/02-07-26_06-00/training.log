@@ -1,0 +1,179 @@
+2026-07-02 06:00:01,373 [INFO] ============================================================
+2026-07-02 06:00:01,373 [INFO] HFIN - Hierarchical Federated Class-Incremental Learning
+2026-07-02 06:00:01,373 [INFO]    Network Intrusion Detection for IIoT
+2026-07-02 06:00:01,373 [INFO] ============================================================
+2026-07-02 06:00:01,373 [INFO] Device: cpu
+2026-07-02 06:00:01,373 [INFO] Dataset: cic_iot23
+2026-07-02 06:00:01,373 [INFO] Method: WA
+2026-07-02 06:00:01,373 [INFO] Mode: TRAIN
+2026-07-02 06:00:01,373 [INFO] Clients: 10, Edge Servers: 2
+2026-07-02 06:00:01,373 [INFO] Base classes: 6, Task size: 5
+2026-07-02 06:00:01,373 [INFO] Total classes: 34
+2026-07-02 06:00:01,373 [INFO] 
+[1/4] Loading global test data for CIC-IoT23...
+2026-07-02 06:00:18,984 [INFO] Features: 33, Global Test: 14002687
+2026-07-02 06:00:18,984 [INFO] Total classes: 34 | Clients: 10 | Edges: 2
+2026-07-02 06:00:20,547 [INFO] 
+[2/4] Mapping 10 FL Clients to 2 Edge Server(s)...
+2026-07-02 06:00:20,547 [INFO] 
+[2/4] Mapping 10 FL Clients to 2 Edge Servers...
+2026-07-02 06:00:20,547 [INFO] Edge-Client mapping: defaultdict(<class 'list'>, {0: [0, 1, 2, 3, 4], 1: [5, 6, 7, 8, 9]})
+2026-07-02 06:00:20,547 [INFO] 
+[3/4] Initializing models...
+2026-07-02 06:00:50,022 [INFO] [REPLAY] replay_ratio=0.01 | total_train=32,683,828 | memory_size/Edge=326,838
+2026-07-02 06:00:50,031 [INFO] 
+[4/4] Starting training...
+2026-07-02 06:00:50,031 [INFO] 
+Loading data for Task 0 (Classes: [0, 1, 2, 3, 4, 5])...
+2026-07-02 06:00:50,032 [INFO] [SCENARIO] Active clients for Task 0: 5 clients (0 to 4)
+2026-07-02 06:00:50,745 [INFO] 
+============================================================
+2026-07-02 06:00:50,746 [INFO] Task 0/5 | Classes: [0, 1, 2, 3, 4, 5] | 30 rounds | LR: 0.001
+2026-07-02 06:00:50,746 [INFO] ============================================================
+2026-07-02 06:00:50,746 [INFO] 
+--- Task 0, Round 1/30 (Global 1) ---
+2026-07-02 06:09:24,912 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:10:23,240 [INFO]   [Eval] Task 0, R 1: Acc: 99.74% | Prec-Mac: 65.57% | Rec-Mac: 72.54% | Mi-F1: 99.74% | Ma-F1: 67.86% | We-F1: 99.77% | Loss: 0.0108
+2026-07-02 06:10:23,247 [INFO]   [CKPT] Saved: ckpt_wa_task00_r001_global001_acc99.7.pth
+2026-07-02 06:10:23,247 [INFO] 
+--- Task 0, Round 2/30 (Global 2) ---
+2026-07-02 06:18:58,461 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:19:54,162 [INFO]   [Eval] Task 0, R 2: Acc: 99.66% | Prec-Mac: 64.85% | Rec-Mac: 75.59% | Mi-F1: 99.66% | Ma-F1: 67.69% | We-F1: 99.74% | Loss: 0.0124
+2026-07-02 06:19:54,166 [INFO]   [CKPT] Saved: ckpt_wa_task00_r002_global002_acc99.7.pth
+2026-07-02 06:19:54,166 [INFO] 
+--- Task 0, Round 3/30 (Global 3) ---
+2026-07-02 06:26:11,630 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:27:09,306 [INFO]   [Eval] Task 0, R 3: Acc: 99.73% | Prec-Mac: 67.44% | Rec-Mac: 77.25% | Mi-F1: 99.73% | Ma-F1: 70.06% | We-F1: 99.78% | Loss: 0.0100
+2026-07-02 06:27:09,310 [INFO]   [CKPT] Saved: ckpt_wa_task00_r003_global003_acc99.7.pth
+2026-07-02 06:27:09,310 [INFO] 
+--- Task 0, Round 4/30 (Global 4) ---
+2026-07-02 06:33:34,320 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:34:35,102 [INFO]   [Eval] Task 0, R 4: Acc: 99.76% | Prec-Mac: 66.64% | Rec-Mac: 75.00% | Mi-F1: 99.76% | Ma-F1: 69.70% | We-F1: 99.79% | Loss: 0.0089
+2026-07-02 06:34:35,106 [INFO]   [CKPT] Saved: ckpt_wa_task00_r004_global004_acc99.8.pth
+2026-07-02 06:34:35,106 [INFO] 
+--- Task 0, Round 5/30 (Global 5) ---
+2026-07-02 06:40:53,831 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:41:52,136 [INFO]   [Eval] Task 0, R 5: Acc: 99.75% | Prec-Mac: 65.14% | Rec-Mac: 74.63% | Mi-F1: 99.75% | Ma-F1: 67.92% | We-F1: 99.78% | Loss: 0.0087
+2026-07-02 06:41:52,139 [INFO]   [CKPT] Saved: ckpt_wa_task00_r005_global005_acc99.7.pth
+2026-07-02 06:41:52,140 [INFO] 
+--- Task 0, Round 6/30 (Global 6) ---
+2026-07-02 06:50:30,450 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 06:51:27,644 [INFO]   [Eval] Task 0, R 6: Acc: 99.52% | Prec-Mac: 67.29% | Rec-Mac: 80.40% | Mi-F1: 99.52% | Ma-F1: 68.82% | We-F1: 99.68% | Loss: 0.0146
+2026-07-02 06:51:27,649 [INFO]   [CKPT] Saved: ckpt_wa_task00_r006_global006_acc99.5.pth
+2026-07-02 06:51:27,649 [INFO] 
+--- Task 0, Round 7/30 (Global 7) ---
+2026-07-02 07:00:02,228 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:00:58,325 [INFO]   [Eval] Task 0, R 7: Acc: 99.71% | Prec-Mac: 65.84% | Rec-Mac: 76.57% | Mi-F1: 99.71% | Ma-F1: 68.71% | We-F1: 99.77% | Loss: 0.0103
+2026-07-02 07:00:58,328 [INFO]   [CKPT] Saved: ckpt_wa_task00_r007_global007_acc99.7.pth
+2026-07-02 07:00:58,329 [INFO] 
+--- Task 0, Round 8/30 (Global 8) ---
+2026-07-02 07:09:37,261 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:10:36,843 [INFO]   [Eval] Task 0, R 8: Acc: 99.65% | Prec-Mac: 65.14% | Rec-Mac: 76.65% | Mi-F1: 99.65% | Ma-F1: 67.53% | We-F1: 99.74% | Loss: 0.0113
+2026-07-02 07:10:36,847 [INFO]   [CKPT] Saved: ckpt_wa_task00_r008_global008_acc99.7.pth
+2026-07-02 07:10:36,847 [INFO] 
+--- Task 0, Round 9/30 (Global 9) ---
+2026-07-02 07:19:26,817 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:20:25,504 [INFO]   [Eval] Task 0, R 9: Acc: 99.64% | Prec-Mac: 67.64% | Rec-Mac: 79.69% | Mi-F1: 99.64% | Ma-F1: 69.96% | We-F1: 99.74% | Loss: 0.0120
+2026-07-02 07:20:25,507 [INFO]   [CKPT] Saved: ckpt_wa_task00_r009_global009_acc99.6.pth
+2026-07-02 07:20:25,507 [INFO] 
+--- Task 0, Round 10/30 (Global 10) ---
+2026-07-02 07:26:48,621 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:27:47,579 [INFO]   [Eval] Task 0, R 10: Acc: 99.73% | Prec-Mac: 65.37% | Rec-Mac: 76.36% | Mi-F1: 99.73% | Ma-F1: 68.26% | We-F1: 99.78% | Loss: 0.0091
+2026-07-02 07:27:47,583 [INFO]   [CKPT] Saved: ckpt_wa_task00_r010_global010_acc99.7.pth
+2026-07-02 07:27:47,583 [INFO] 
+--- Task 0, Round 11/30 (Global 11) ---
+2026-07-02 07:36:34,725 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:37:33,962 [INFO]   [Eval] Task 0, R 11: Acc: 99.67% | Prec-Mac: 66.19% | Rec-Mac: 78.01% | Mi-F1: 99.67% | Ma-F1: 69.31% | We-F1: 99.75% | Loss: 0.0110
+2026-07-02 07:37:33,965 [INFO]   [CKPT] Saved: ckpt_wa_task00_r011_global011_acc99.7.pth
+2026-07-02 07:37:33,965 [INFO] 
+--- Task 0, Round 12/30 (Global 12) ---
+2026-07-02 07:43:57,952 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:44:56,589 [INFO]   [Eval] Task 0, R 12: Acc: 99.68% | Prec-Mac: 65.59% | Rec-Mac: 76.98% | Mi-F1: 99.68% | Ma-F1: 68.07% | We-F1: 99.76% | Loss: 0.0098
+2026-07-02 07:44:56,592 [INFO]   [CKPT] Saved: ckpt_wa_task00_r012_global012_acc99.7.pth
+2026-07-02 07:44:56,593 [INFO] 
+--- Task 0, Round 13/30 (Global 13) ---
+2026-07-02 07:51:25,787 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 07:52:24,356 [INFO]   [Eval] Task 0, R 13: Acc: 99.66% | Prec-Mac: 65.24% | Rec-Mac: 77.65% | Mi-F1: 99.66% | Ma-F1: 67.76% | We-F1: 99.75% | Loss: 0.0105
+2026-07-02 07:52:24,359 [INFO]   [CKPT] Saved: ckpt_wa_task00_r013_global013_acc99.7.pth
+2026-07-02 07:52:24,360 [INFO] 
+--- Task 0, Round 14/30 (Global 14) ---
+2026-07-02 08:01:02,292 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:01:59,218 [INFO]   [Eval] Task 0, R 14: Acc: 99.71% | Prec-Mac: 66.16% | Rec-Mac: 76.66% | Mi-F1: 99.71% | Ma-F1: 68.89% | We-F1: 99.78% | Loss: 0.0093
+2026-07-02 08:01:59,222 [INFO]   [CKPT] Saved: ckpt_wa_task00_r014_global014_acc99.7.pth
+2026-07-02 08:01:59,222 [INFO] 
+--- Task 0, Round 15/30 (Global 15) ---
+2026-07-02 08:10:32,383 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:11:30,159 [INFO]   [Eval] Task 0, R 15: Acc: 99.68% | Prec-Mac: 66.14% | Rec-Mac: 78.42% | Mi-F1: 99.68% | Ma-F1: 69.19% | We-F1: 99.76% | Loss: 0.0104
+2026-07-02 08:11:30,164 [INFO]   [CKPT] Saved: ckpt_wa_task00_r015_global015_acc99.7.pth
+2026-07-02 08:11:30,164 [INFO] 
+--- Task 0, Round 16/30 (Global 16) ---
+2026-07-02 08:17:53,793 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:18:52,486 [INFO]   [Eval] Task 0, R 16: Acc: 99.74% | Prec-Mac: 66.18% | Rec-Mac: 76.72% | Mi-F1: 99.74% | Ma-F1: 68.72% | We-F1: 99.79% | Loss: 0.0087
+2026-07-02 08:18:52,489 [INFO]   [CKPT] Saved: ckpt_wa_task00_r016_global016_acc99.7.pth
+2026-07-02 08:18:52,490 [INFO] 
+--- Task 0, Round 17/30 (Global 17) ---
+2026-07-02 08:25:13,821 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:26:12,446 [INFO]   [Eval] Task 0, R 17: Acc: 99.72% | Prec-Mac: 67.37% | Rec-Mac: 79.41% | Mi-F1: 99.72% | Ma-F1: 70.55% | We-F1: 99.79% | Loss: 0.0094
+2026-07-02 08:26:12,450 [INFO]   [CKPT] Saved: ckpt_wa_task00_r017_global017_acc99.7.pth
+2026-07-02 08:26:12,450 [INFO] 
+--- Task 0, Round 18/30 (Global 18) ---
+2026-07-02 08:34:59,610 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:35:59,395 [INFO]   [Eval] Task 0, R 18: Acc: 99.69% | Prec-Mac: 66.90% | Rec-Mac: 79.78% | Mi-F1: 99.69% | Ma-F1: 70.13% | We-F1: 99.77% | Loss: 0.0104
+2026-07-02 08:35:59,399 [INFO]   [CKPT] Saved: ckpt_wa_task00_r018_global018_acc99.7.pth
+2026-07-02 08:35:59,399 [INFO] 
+--- Task 0, Round 19/30 (Global 19) ---
+2026-07-02 08:44:37,186 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:45:37,130 [INFO]   [Eval] Task 0, R 19: Acc: 99.54% | Prec-Mac: 64.74% | Rec-Mac: 78.98% | Mi-F1: 99.54% | Ma-F1: 67.09% | We-F1: 99.68% | Loss: 0.0132
+2026-07-02 08:45:37,133 [INFO]   [CKPT] Saved: ckpt_wa_task00_r019_global019_acc99.5.pth
+2026-07-02 08:45:37,134 [INFO] 
+--- Task 0, Round 20/30 (Global 20) ---
+2026-07-02 08:52:01,106 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 08:52:59,361 [INFO]   [Eval] Task 0, R 20: Acc: 99.71% | Prec-Mac: 66.85% | Rec-Mac: 79.01% | Mi-F1: 99.71% | Ma-F1: 70.08% | We-F1: 99.78% | Loss: 0.0095
+2026-07-02 08:52:59,364 [INFO]   [CKPT] Saved: ckpt_wa_task00_r020_global020_acc99.7.pth
+2026-07-02 08:52:59,364 [INFO] 
+--- Task 0, Round 21/30 (Global 21) ---
+2026-07-02 09:01:42,111 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:02:41,906 [INFO]   [Eval] Task 0, R 21: Acc: 99.60% | Prec-Mac: 65.61% | Rec-Mac: 78.87% | Mi-F1: 99.60% | Ma-F1: 68.22% | We-F1: 99.72% | Loss: 0.0114
+2026-07-02 09:02:41,909 [INFO]   [CKPT] Saved: ckpt_wa_task00_r021_global021_acc99.6.pth
+2026-07-02 09:02:41,910 [INFO] 
+--- Task 0, Round 22/30 (Global 22) ---
+2026-07-02 09:11:27,067 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:12:26,857 [INFO]   [Eval] Task 0, R 22: Acc: 99.66% | Prec-Mac: 66.43% | Rec-Mac: 79.00% | Mi-F1: 99.66% | Ma-F1: 69.28% | We-F1: 99.76% | Loss: 0.0107
+2026-07-02 09:12:26,861 [INFO]   [CKPT] Saved: ckpt_wa_task00_r022_global022_acc99.7.pth
+2026-07-02 09:12:26,862 [INFO] 
+--- Task 0, Round 23/30 (Global 23) ---
+2026-07-02 09:21:28,643 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:22:28,526 [INFO]   [Eval] Task 0, R 23: Acc: 99.65% | Prec-Mac: 66.52% | Rec-Mac: 79.23% | Mi-F1: 99.65% | Ma-F1: 69.32% | We-F1: 99.75% | Loss: 0.0107
+2026-07-02 09:22:28,532 [INFO]   [CKPT] Saved: ckpt_wa_task00_r023_global023_acc99.7.pth
+2026-07-02 09:22:28,532 [INFO] 
+--- Task 0, Round 24/30 (Global 24) ---
+2026-07-02 09:31:15,785 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:32:15,323 [INFO]   [Eval] Task 0, R 24: Acc: 99.64% | Prec-Mac: 67.02% | Rec-Mac: 81.03% | Mi-F1: 99.64% | Ma-F1: 69.91% | We-F1: 99.75% | Loss: 0.0115
+2026-07-02 09:32:15,327 [INFO]   [CKPT] Saved: ckpt_wa_task00_r024_global024_acc99.6.pth
+2026-07-02 09:32:15,327 [INFO] 
+--- Task 0, Round 25/30 (Global 25) ---
+2026-07-02 09:40:59,273 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:42:05,689 [INFO]   [Eval] Task 0, R 25: Acc: 99.57% | Prec-Mac: 65.76% | Rec-Mac: 80.35% | Mi-F1: 99.57% | Ma-F1: 68.52% | We-F1: 99.71% | Loss: 0.0128
+2026-07-02 09:42:05,693 [INFO]   [CKPT] Saved: ckpt_wa_task00_r025_global025_acc99.6.pth
+2026-07-02 09:42:05,694 [INFO] 
+--- Task 0, Round 26/30 (Global 26) ---
+2026-07-02 09:50:50,676 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 09:51:49,103 [INFO]   [Eval] Task 0, R 26: Acc: 99.75% | Prec-Mac: 67.56% | Rec-Mac: 77.48% | Mi-F1: 99.75% | Ma-F1: 70.12% | We-F1: 99.81% | Loss: 0.0076
+2026-07-02 09:51:49,108 [INFO]   [CKPT] Saved: ckpt_wa_task00_r026_global026_acc99.8.pth
+2026-07-02 09:51:49,108 [INFO] 
+--- Task 0, Round 27/30 (Global 27) ---
+2026-07-02 10:00:32,548 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 10:01:35,254 [INFO]   [Eval] Task 0, R 27: Acc: 99.67% | Prec-Mac: 66.30% | Rec-Mac: 78.42% | Mi-F1: 99.67% | Ma-F1: 68.56% | We-F1: 99.76% | Loss: 0.0101
+2026-07-02 10:01:35,258 [INFO]   [CKPT] Saved: ckpt_wa_task00_r027_global027_acc99.7.pth
+2026-07-02 10:01:35,258 [INFO] 
+--- Task 0, Round 28/30 (Global 28) ---
+2026-07-02 10:10:21,046 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 10:11:21,416 [INFO]   [Eval] Task 0, R 28: Acc: 99.70% | Prec-Mac: 66.57% | Rec-Mac: 79.49% | Mi-F1: 99.70% | Ma-F1: 69.85% | We-F1: 99.77% | Loss: 0.0098
+2026-07-02 10:11:21,421 [INFO]   [CKPT] Saved: ckpt_wa_task00_r028_global028_acc99.7.pth
+2026-07-02 10:11:21,421 [INFO] 
+--- Task 0, Round 29/30 (Global 29) ---
+2026-07-02 10:19:54,273 [INFO] Edge 1: WTO không chọn client nào.
+2026-07-02 10:20:53,274 [INFO]   [Eval] Task 0, R 29: Acc: 99.66% | Prec-Mac: 66.61% | Rec-Mac: 78.99% | Mi-F1: 99.66% | Ma-F1: 69.26% | We-F1: 99.76% | Loss: 0.0100
+2026-07-02 10:20:53,278 [INFO]   [CKPT] Saved: ckpt_wa_task00_r029_global029_acc99.7.pth
+2026-07-02 10:20:53,278 [INFO] 
+--- Task 0, Round 30/30 (Global 30) ---
