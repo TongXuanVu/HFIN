@@ -28,18 +28,26 @@ class NetFlowDataset(Dataset):
             
         self.X_all = X.astype(np.float32)
         self.y_all = y.astype(np.int64)
-        
+
         # Dữ liệu hiện tại (sẽ được filter theo task)
         self.X = self.X_all.copy()
         self.y = self.y_all.copy()
+        self._sync_tensors()
+
+    def _sync_tensors(self):
+        """
+        Tao san tensor tu self.X / self.y (goi moi khi self.X/self.y thay doi).
+        Giup __getitem__ chi can index thay vi tao FloatTensor moi moi mau
+        -> tang toc DataLoader ma KHONG doi gia tri (view chung buffer numpy).
+        """
+        self._X_t = torch.from_numpy(np.ascontiguousarray(self.X, dtype=np.float32))
+        self._y_t = torch.from_numpy(np.ascontiguousarray(self.y, dtype=np.int64))
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, idx):
-        x = torch.FloatTensor(self.X[idx])
-        y = torch.LongTensor([self.y[idx]])[0]
-        return idx, x, y
+        return idx, self._X_t[idx], self._y_t[idx]
 
     def getTrainData(self, classes, exemplar_set=None, exemplar_classes=None):
         """
@@ -53,6 +61,7 @@ class NetFlowDataset(Dataset):
         if classes is None:
             self.X = self.X_all.copy()
             self.y = self.y_all.copy()
+            self._sync_tensors()
             return
 
         # Lọc dữ liệu theo classes hiện tại
@@ -80,6 +89,7 @@ class NetFlowDataset(Dataset):
         else:
             self.X = X_current
             self.y = y_current
+        self._sync_tensors()
 
     def getTestData(self, class_range):
         """
@@ -96,6 +106,7 @@ class NetFlowDataset(Dataset):
         mask = np.isin(self.y_all, classes)
         self.X = self.X_all[mask]
         self.y = self.y_all[mask]
+        self._sync_tensors()
 
     def get_class_data(self, class_id):
         """Lấy tất cả dữ liệu của một lớp cụ thể"""

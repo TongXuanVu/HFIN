@@ -1,6 +1,6 @@
 """
-Cấu hình và tham số cho HFIN - Hierarchical Federated Incremental Learning NID
-Thông số được căn chỉnh theo Mục VI.B của bài báo.
+Cau hinh va tham so cho HFIN - Hierarchical Federated Incremental Learning NID
+Thong so duoc can chinh theo Muc VI.B cua bai bao.
 """
 import argparse
 import torch
@@ -12,153 +12,167 @@ def args_parser():
     )
 
     # === Dataset ===
-    parser.add_argument('--dataset', type=str, default='nf_ton_iot',
-                        choices=['nf_ton_iot', 'nf_uq_nids', 'nf_unsw_nb15'],
-                        help='Tên dataset (mặc định: nf_ton_iot)')
-    parser.add_argument('--data_path', type=str, default='./data/raw/',
-                        help='Đường dẫn thư mục chứa file CSV dataset')
-    parser.add_argument('--num_features', type=int, default=43,
-                        help='Số features NetFlow (43 features chuẩn)')
-    parser.add_argument('--max_samples', type=int, default=100000,
-                        help='Giới hạn mẫu (0 = lấy hết). Mặc định 100k để tránh treo máy với UQ-NIDS')
-    parser.add_argument('--test_size', type=float, default=0.4,
-                        help='Tỷ lệ test set (0.4 = 60/40 theo Mục VI.B)')
+    parser.add_argument('--dataset', type=str, default='cic_iot23',
+                        choices=['nf_ton_iot', 'nf_uq_nids', 'nf_unsw_nb15', 'cic_iot23'],
+                        help='Ten dataset (mac dinh: cic_iot23)')
+    parser.add_argument('--data_path', type=str, default=r'c:\FederatedLearning\FL\core\data_split',
+                        help='Duong dan thu muc raw chua file CSV va .pkl')
+    parser.add_argument('--num_features', type=int, default=46,
+                        help='So features dau vao (CIC-IoT23: 46)')
+    parser.add_argument('--max_samples', type=int, default=0,
+                        help='Gioi han mau (0 = lay het)')
+    parser.add_argument('--test_size', type=float, default=0.3,
+                        help='Ti le test set (0.3 = 70/30)')
 
     # === Task Schedule (Class-Incremental Learning) ===
-    # Tham khảo Table I trong bài báo
-    parser.add_argument('--task_schedule', type=str, default='task2',
-                        choices=['task2', 'task4', 'task5', 'task10'],
-                        help=(
-                            'Cấu hình task incremental:\n'
-                            '  nf_ton_iot : task2 (5 tasks, mỗi task +2 class)\n'
-                            '               task5 (2 tasks, mỗi task +5 class)\n'
-                            '  nf_uq_nids : task2 (11 tasks, mỗi task +2 class)\n'
-                            '               task4 ( 6 tasks, mỗi task +4 class)\n'
-                            '               task10( 3 tasks, mỗi task +10 class)'
-                        ))
-    parser.add_argument('--num_base_classes', type=int, default=4,
-                        help='Số lớp base task (tự động ghi đè từ task_schedule nếu 0)')
-    parser.add_argument('--task_size', type=int, default=2,
-                        help='Số lớp mới mỗi incremental task (ghi đè từ schedule)')
-    parser.add_argument('--total_classes', type=int, default=10,
-                        help='Tổng số class: nf_ton_iot=10, nf_uq_nids=21')
-    parser.add_argument('--memory_size', type=int, default=500,
-                        help='Kích thước bộ nhớ exemplar tại Edge Server (Paper: 500)')
+    parser.add_argument('--task_schedule', type=str, default='task6',
+                        choices=['task2', 'task4', 'task5', 'task10', 'task6'],
+                        help='Cau hinh task incremental')
+    parser.add_argument('--num_base_classes', type=int, default=6,
+                        help='So lop base task')
+    parser.add_argument('--task_size', type=int, default=6,
+                        help='So lop moi moi incremental task')
+    parser.add_argument('--total_classes', type=int, default=34,
+                        help='Tong so class: cic_iot23=34')
+    parser.add_argument('--memory_size', type=int, default=2000,
+                        help='Kich thuoc bo nho exemplar tai Edge Server (dung khi replay_ratio=0)')
+    parser.add_argument('--replay_ratio', type=float, default=0.0,
+                        help=('Ti le bo nho exemplar theo TONG so mau train. '
+                              '0 = tat (dung --memory_size co dinh). '
+                              'Vi du 0.01 = bo nho exemplar moi Edge = 1%% tong du lieu.'))
 
     # === Federated Learning ===
-    parser.add_argument('--num_clients', type=int, default=60,
-                        help='Tổng số clients (Mục VI.B: 60 clients)')
-    parser.add_argument('--num_edge_servers', type=int, default=3,
-                        help='Số edge servers (Mục VI.B: 3 edges, mỗi edge 20 clients)')
+    parser.add_argument('--num_clients', type=int, default=10,
+                        help='Tong so clients')
+    parser.add_argument('--num_edge_servers', type=int, default=2,
+                        help='So edge servers')
     parser.add_argument('--local_clients', type=int, default=10,
-                        help='Số clients được chọn mỗi vòng (mặc định: 10)')
-    parser.add_argument('--epochs_base', type=int, default=40,
-                        help='Số global rounds cho Base Task (Mục VI.B: 40 rounds)')
-    parser.add_argument('--epochs_incremental', type=int, default=80,
-                        help='Số global rounds cho mỗi Incremental Task (Mục VI.B: 80 rounds/task)')
+                        help='So clients duoc chon moi vong')
+    parser.add_argument('--epochs_base', type=int, default=30,
+                        help='So global rounds cho Base Task')
+    parser.add_argument('--epochs_incremental', type=int, default=30,
+                        help='So global rounds cho moi Incremental Task')
     parser.add_argument('--dirichlet_alpha', type=float, default=0.5,
-                        help='Tham số Dirichlet non-IID (nhỏ → non-IID mạnh hơn)')
+                        help='Tham so Dirichlet non-IID')
     parser.add_argument('--alpha_benign', type=float, default=0.3,
-                        help='Alpha cho lớp Benign (0.3 theo Mục VI.B)')
+                        help='Alpha cho lop Benign')
     parser.add_argument('--alpha_attack', type=float, default=0.8,
-                        help='Alpha cho các lớp Attack (0.8 theo Mục VI.B)')
+                        help='Alpha cho cac lop Attack')
 
-    # === Huấn luyện ===
+    # === Huan luyen ===
     parser.add_argument('--epochs_local', type=int, default=5,
-                        help='Số epochs huấn luyện local mỗi round')
-    parser.add_argument('--batch_size', type=int, default=256,
+                        help='So epochs huan luyen local moi round')
+    parser.add_argument('--batch_size', type=int, default=1024,
                         help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.001,
-                        help='Learning rate base task (Mục VI.B: 1e-2, user đề xuất: 1e-3)')
+                        help='Learning rate base task')
     parser.add_argument('--lr_incremental', type=float, default=0.001,
-                        help='Learning rate incremental task (Mục VI.B: 2e-2, user đề xuất: 1e-3)')
+                        help='Learning rate incremental task')
     parser.add_argument('--weight_decay', type=float, default=5e-4,
-                        help='Weight decay (Mục VI.B: 5e-4)')
+                        help='Weight decay')
     parser.add_argument('--momentum', type=float, default=0.9,
-                        help='SGD Momentum (Mục VI.B: 0.9)')
+                        help='SGD Momentum')
     parser.add_argument('--lr_decay_step', type=int, default=50,
-                        help='Giảm LR sau mỗi N global rounds')
+                        help='Giam LR sau moi N global rounds')
     parser.add_argument('--lr_decay_gamma', type=float, default=0.1,
-                        help='Hệ số giảm LR')
+                        help='He so giam LR')
+
+    # === Downsampling ===
+    parser.add_argument('--max_samples_per_class', type=int, default=0,
+                        help='Gioi han so mau toi da moi lop. 0 = khong gioi han.')
+    parser.add_argument('--downsample_ratio', type=float, default=1.0,
+                        help='Ti le lay mau (1.0 = lay het, 0.125 = 1/8)')
 
     # === WTO - Weighted Transmission Optimization ===
     parser.add_argument('--wto_beta', type=float, default=0.5,
-                        help='Beta trong WTO (Eq. 8): cân bằng class importance')
+                        help='Beta trong WTO (Eq. 8)')
     parser.add_argument('--max_transmission_time', type=float, default=2.0,
-                        help='Giới hạn thời gian truyền tải WTO (giây)')
+                        help='Gioi han thoi gian truyen tai WTO (giay)')
 
     # === Knowledge Distillation ===
     parser.add_argument('--temperature', type=float, default=2.0,
-                        help='Temperature distillation (T=2, Mục IV.B)')
+                        help='Temperature distillation (T=2)')
+
+    # === Method (Incremental Learning Strategy) ===
+    parser.add_argument('--method', type=str, default='wa',
+                        choices=['icarl', 'wa', 'der', 'der++'],
+                        help='Chien luoc chong catastrophic forgetting: icarl / wa / der / der++')
+    parser.add_argument('--der_alpha', type=float, default=0.5,
+                        help='DER: trong so MSE term')
+    parser.add_argument('--der_beta', type=float, default=0.5,
+                        help='DER++: trong so CE-buffer term')
 
     # === Model ===
     parser.add_argument('--feature_dim', type=int, default=64,
-                        help='Chiều output của CNN feature extractor')
+                        help='Chieu output cua CNN feature extractor')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='Dropout rate')
 
-    # === Khác ===
+    # === Khac ===
     parser.add_argument('--seed', type=int, default=2024,
                         help='Random seed')
-    parser.add_argument('--eval_interval', type=int, default=10,
-                        help='Số global rounds giữa mỗi lần đánh giá')
+    parser.add_argument('--eval_interval', type=int, default=1,
+                        help='So global rounds giua moi lan danh gia')
     parser.add_argument('--device', type=str, default='auto',
                         help='Device: auto, cpu, cuda, cuda:0, ...')
     parser.add_argument('--log_dir', type=str, default='./logs/',
-                        help='Thư mục lưu log')
+                        help='Thu muc luu log')
     parser.add_argument('--save_dir', type=str, default='./checkpoints/',
-                        help='Thư mục lưu model checkpoint')
+                        help='Thu muc luu model (cu, giu lai de tuong thuoc)')
     parser.add_argument('--debug', action='store_true',
-                        help='Chế độ debug: dùng max_samples=50000 và epochs_global=2')
+                        help='Che do debug: dung max_samples=50000 va epochs_global=2')
+
+    # === Mode: train or test ===
+    parser.add_argument('--mode', type=str, default='train',
+                        choices=['train', 'test'],
+                        help=(
+                            'train: chay toan bo training va luu checkpoint moi round. '
+                            'test : chi load checkpoint da luu va chay evaluation.'
+                        ))
+    parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints/',
+                        help='Thu muc de luu checkpoint trong qua trinh train.')
+    parser.add_argument('--test_checkpoint_dir', type=str, default='',
+                        help=(
+                            'Thu muc chua checkpoint de load khi chay --mode test. '
+                            'Neu de trong, se tim thu muc moi nhat trong checkpoint_dir.'
+                        ))
+    
+    # === Resume Training ===
+    parser.add_argument('--resume', action='store_true',
+                        help='Bat che do resume tu checkpoint.')
+    parser.add_argument('--resume_ckpt', type=str, default='',
+                        help='Duong dan den file .pth de resume.')
 
     args = parser.parse_args()
 
-    # === Auto-fill từ dataset & task_schedule ===
+    # === Auto-fill tu dataset & task_schedule ===
     _fill_dataset_defaults(args)
 
     # Auto detect device
     if args.device == 'auto':
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # Debug mode: giảm số mẫu và vòng lặp
+    # Debug mode
     if args.debug:
         if args.max_samples == 0:
             args.max_samples = 50000
-        args.epochs_base       = 2
+        args.epochs_base        = 2
         args.epochs_incremental = 2
-        args.num_clients    = 6
-        args.num_edge_servers = 2
-        args.local_clients  = 2
-        args.epochs_local   = 1
+        args.num_clients        = 10
+        args.num_edge_servers   = 2
+        args.local_clients      = 10
+        args.epochs_local       = 1
 
     return args
 
 
 def _fill_dataset_defaults(args):
-    """Tự động điền total_classes, num_base_classes, task_size từ dataset & schedule."""
-    from data.partition import TASK_CONFIGS
-
-    if args.dataset not in TASK_CONFIGS:
-        return
-
-    cfg   = TASK_CONFIGS[args.dataset]
-    key   = args.task_schedule
-
-    # Lấy schedule khả dụng
-    avail = list(cfg['schedules'].keys())
-    if key not in avail:
-        key = cfg['default_schedule']
-        print(f'[CONFIG] task_schedule "{args.task_schedule}" không khả dụng với dataset '
-              f'"{args.dataset}". Dùng "{key}" thay thế. Khả dụng: {avail}')
-        args.task_schedule = key
-
-    sched = cfg['schedules'][key]
-    args.total_classes    = cfg['total_classes']
-    args.num_base_classes = sched['base']
-    args.task_size        = sched['step']
-
-    print(f'[CONFIG] Dataset: {args.dataset} | Schedule: {key}')
+    """Tu dong dien total_classes, num_base_classes, task_size tu dataset CIC-IoT23."""
+    args.total_classes    = 34
+    args.num_base_classes = 6
+    args.task_size        = 5
+    args.dataset          = 'cic_iot23'
+    print(f'[CONFIG] Dataset: {args.dataset}')
     print(f'         Total classes: {args.total_classes} | '
           f'Base: {args.num_base_classes} | '
-          f'Step: {args.task_size} class/task | '
-          f'Tasks: {sched["num_tasks"]} incremental tasks')
+          f'Step: {args.task_size} class/task')

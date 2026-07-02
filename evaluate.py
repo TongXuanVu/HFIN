@@ -5,9 +5,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from sklearn.metrics import (
-    accuracy_score, f1_score, classification_report,
+    accuracy_score, f1_score, precision_score, recall_score,
     confusion_matrix
 )
+import torch.nn.functional as F
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ import seaborn as sns
 import os
 
 
-def evaluate_model(model, test_dataset, classes, device, batch_size=256):
+def evaluate_model(model, test_dataset, classes, device, batch_size=4096):
     """
     Đánh giá model trên tập test
     
@@ -33,27 +34,69 @@ def evaluate_model(model, test_dataset, classes, device, batch_size=256):
     model.to(device)
 
     test_dataset.getTestData(classes)
-    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=batch_size)
+    _pin = ('cuda' in str(device))
+    _nw = 2 if os.name != 'nt' else 0
+    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=batch_size,
+                             num_workers=_nw, pin_memory=_pin)
 
-    all_preds = []
-    all_labels = []
+    # Gom du doan bang tensor tren device roi chuyen ve CPU 1 lan
+    # (thay cho list.extend hang trieu phan tu) -> gia tri & thu tu KHONG doi.
+    pred_batches = []
+    label_batches = []
+    total_loss = 0.0
+    num_samples = 0
 
-    for _, features, labels in test_loader:
-        features = features.to(device)
-        with torch.no_grad():
+    with torch.no_grad():
+        for _, features, labels in test_loader:
+            features = features.to(device, non_blocking=_pin)
+            labels = labels.to(device, non_blocking=_pin)
             outputs = model(features)
-        preds = torch.max(outputs, dim=1)[1].cpu().numpy()
-        all_preds.extend(preds)
-        all_labels.extend(labels.numpy())
+            # DERNetwork tra ve (logits, aux_logits) -- chi can logits chinh
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]
+            loss = F.cross_entropy(outputs, labels)
 
-    y_true = np.array(all_labels)
-    y_pred = np.array(all_preds)
+            total_loss += loss.item() * features.size(0)
+            num_samples += features.size(0)
+
+            pred_batches.append(torch.argmax(outputs, dim=1))
+            label_batches.append(labels)
+
+    y_pred = torch.cat(pred_batches).cpu().numpy()
+    y_true = torch.cat(label_batches).cpu().numpy()
+
+    avg_loss = total_loss / max(1, num_samples)
+
+    # Tính Confusion Matrix để lấy FPR (False Positive Rate)
+    # Trong NIDS, FPR = (Mẫu Benign bị đoán nhầm là Attack) / (Tổng mẫu Benign)
+    # Giả định Class 0 là Benign (chuẩn CIC-IoT23)
+    cm = confusion_matrix(y_true, y_pred, labels=range(len(classes)) if isinstance(classes, (list, range)) else None)
+    fpr = 0.0
+    if cm.shape[0] > 0:
+        # TN = cm[0,0], FP = sum(cm[0, 1:])
+        tn = cm[0, 0]
+        fp = np.sum(cm[0, 1:])
+        if (fp + tn) > 0:
+            fpr = (fp / (fp + tn)) * 100
 
     results = {
         'accuracy': accuracy_score(y_true, y_pred) * 100,
+        
+        'precision_micro': precision_score(y_true, y_pred, average='micro', zero_division=0) * 100,
+        'precision_macro': precision_score(y_true, y_pred, average='macro', zero_division=0) * 100,
+        'precision_weighted': precision_score(y_true, y_pred, average='weighted', zero_division=0) * 100,
+        
+        'recall_micro': recall_score(y_true, y_pred, average='micro', zero_division=0) * 100,
+        'recall_macro': recall_score(y_true, y_pred, average='macro', zero_division=0) * 100,
+        'recall_weighted': recall_score(y_true, y_pred, average='weighted', zero_division=0) * 100,
+        
+        'f1_micro': f1_score(y_true, y_pred, average='micro', zero_division=0) * 100,
         'f1_macro': f1_score(y_true, y_pred, average='macro', zero_division=0) * 100,
         'f1_weighted': f1_score(y_true, y_pred, average='weighted', zero_division=0) * 100,
+        
+        'fpr': fpr,
         'per_class_f1': f1_score(y_true, y_pred, average=None, zero_division=0) * 100,
+        'loss': avg_loss,
         'y_true': y_true,
         'y_pred': y_pred,
     }
@@ -96,6 +139,22 @@ def plot_accuracy_curve(rounds, accuracies, save_path, dataset_name=None):
     plt.savefig(save_path, dpi=150)
     plt.close()
 
+def plot_loss_curve(rounds, losses, save_path, dataset_name=None):
+    """
+    Vẽ loss qua các task
+    """
+    plt.figure(figsize=(10, 6))
+    
+    plt.plot(rounds, losses, 'r-o', linewidth=2, markersize=4)
+    plt.xlabel('Task')
+    plt.ylabel('Loss')
+    title = f'HFIN Loss ({dataset_name})' if dataset_name else 'HFIN Loss'
+    plt.title(title)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
 
 def plot_metrics_curves(x_values, metrics_dict, save_path, xlabel='Task', dataset_name=None):
     """
@@ -112,6 +171,8 @@ def plot_metrics_curves(x_values, metrics_dict, save_path, xlabel='Task', datase
     
     styles = {
         'Accuracy': 'b-',
+        'Precision': 'c-.',
+        'Recall': 'm:',
         'Macro-F1': 'g--',
         'Weighted-F1': 'r:'
     }
@@ -176,9 +237,21 @@ def print_evaluation_report(results, task_id, label_map=None, logger=None):
     msg.append('\n' + '='*60)
     msg.append(f'  ĐÁNH GIÁ - Task {task_id}')
     msg.append('='*60)
-    msg.append(f'  Accuracy:     {results["accuracy"]:.2f}%')
-    msg.append(f'  F1 (macro):   {results["f1_macro"]:.2f}%')
-    msg.append(f'  F1 (weighted):{results["f1_weighted"]:.2f}%')
+    msg.append(f'  Accuracy:           {results["accuracy"]:.2f}%')
+    
+    msg.append(f'  Precision (micro):  {results["precision_micro"]:.2f}%')
+    msg.append(f'  Precision (macro):  {results["precision_macro"]:.2f}%')
+    msg.append(f'  Precision (weight): {results["precision_weighted"]:.2f}%')
+    
+    msg.append(f'  Recall (micro):     {results["recall_micro"]:.2f}%')
+    msg.append(f'  Recall (macro):     {results["recall_macro"]:.2f}%')
+    msg.append(f'  Recall (weight):    {results["recall_weighted"]:.2f}%')
+    
+    msg.append(f'  F1 (micro):         {results["f1_micro"]:.2f}%')
+    msg.append(f'  F1 (macro):         {results["f1_macro"]:.2f}%')
+    msg.append(f'  F1 (weight):        {results["f1_weighted"]:.2f}%')
+    
+    msg.append(f'  Loss:               {results["loss"]:.4f}')
 
     if label_map:
         inv_map = {v: k for k, v in label_map.items()}

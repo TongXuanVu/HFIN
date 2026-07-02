@@ -748,14 +748,11 @@ def main():
                 new_norm_post = torch.norm(weights[classes_learned-len(task_classes):classes_learned], p=2, dim=1).mean().item()
                 logger.info(f'  [WA-Post] Avg Norm: Old Classes = {old_norm_post:.4f}, New Classes = {new_norm_post:.4f}')
 
-            # Đánh giá lại sau WA để xem hiệu quả
-            results_post = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
-            acc_post = results_post['accuracy']
             # Cập nhật lại cloud server với các trọng số đã được align
             cloud_server.model = copy.deepcopy(model_g)
-            
-            # Đánh giá lại sau WA để có F1 scores chuẩn cho task report cuối task
-            # Chỉ in report này nếu chưa phải task cuối (để tránh lặp vì đã có FINAL report sau loop)
+
+            # Đánh giá lại sau WA (CHỈ 1 LẦN) để có F1 scores chuẩn & in report.
+            # (Trước đây gọi evaluate_model 2 lần liên tiếp trên cùng model -> trùng lặp.)
             final_task_results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
             if task_id < num_tasks - 1:
                 print_evaluation_report(final_task_results, task_id, label_map, logger)
