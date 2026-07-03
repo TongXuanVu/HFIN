@@ -35,7 +35,8 @@ class EdgeServer:
                  device='cpu', memory_size=500, task_size=2,
                  method='icarl', der_alpha=0.5, der_beta=0.5,
                  max_samples_per_class=0, downsample_ratio=0.125,
-                 input_dim=41, feature_dim=64, lambda_aux=1.0):
+                 input_dim=41, feature_dim=64, lambda_aux=1.0,
+                 herding_pool=200000):
         """
         Args:
             edge_id               : ID cua edge server
@@ -64,6 +65,7 @@ class EdgeServer:
         self.lambda_aux = lambda_aux
         self.input_dim  = input_dim
         self.feature_dim = feature_dim
+        self.herding_pool = herding_pool
 
         # === Khoi tao Model theo method ===
         if method in ('der', 'der++'):
@@ -72,12 +74,12 @@ class EdgeServer:
             # Khoi tao backbone cho base task
             self.model.update_fc(num_classes)
             # DER van can ExemplarManager de chong quen head classifier
-            self.exemplar_manager = ExemplarManager(memory_size, feature_dim)
+            self.exemplar_manager = ExemplarManager(memory_size, feature_dim, herding_pool=herding_pool)
         else:
             # iCaRL / WA: dung HFINNetwork (1 backbone + expandable fc)
             self.model = HFINNetwork(num_classes, feature_extractor)
             feature_ext_dim = feature_extractor.fc.in_features if hasattr(feature_extractor, 'fc') else 64
-            self.exemplar_manager = ExemplarManager(memory_size, feature_ext_dim)
+            self.exemplar_manager = ExemplarManager(memory_size, feature_ext_dim, herding_pool=herding_pool)
 
         # Training state
         self.old_model   = None

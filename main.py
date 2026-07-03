@@ -413,6 +413,7 @@ def main():
             downsample_ratio=args.downsample_ratio,
             input_dim=num_features,
             feature_dim=args.feature_dim,
+            herding_pool=args.herding_pool,
         )
         edge.set_clients(edge_client_map[e_id])
         edge_servers.append(edge)

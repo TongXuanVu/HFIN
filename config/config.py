@@ -40,6 +40,10 @@ def args_parser():
                         help=('Ti le bo nho exemplar theo TONG so mau train. '
                               '0 = tat (dung --memory_size co dinh). '
                               'Vi du 0.01 = bo nho exemplar moi Edge = 1%% tong du lieu.'))
+    parser.add_argument('--herding_pool', type=int, default=200000,
+                        help=('Candidate pooling cho herding: neu 1 lop co nhieu hon '
+                              'herding_pool mau thi random lay pool nay roi moi herding '
+                              '-> tranh treo/cham khi lop rat lon. 0 = tat (herding toan bo).'))
 
     # === Federated Learning ===
     parser.add_argument('--num_clients', type=int, default=10,

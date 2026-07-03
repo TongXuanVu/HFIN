@@ -13,15 +13,19 @@ class ExemplarManager:
     Tương tự exemplar management trong GLFC nhưng cho dữ liệu dạng bảng
     """
 
-    def __init__(self, memory_size, feature_dim):
+    def __init__(self, memory_size, feature_dim, herding_pool=200000):
         """
         Args:
             memory_size: Tổng số mẫu tối đa lưu trong bộ nhớ
             feature_dim: Chiều đặc trưng từ feature extractor
+            herding_pool: Nếu 1 lớp có > herding_pool mẫu thì random lấy
+                          herding_pool mẫu làm "pool" rồi mới herding trên pool
+                          (tăng tốc ~N/pool lần). 0 = tắt (herding trên toàn bộ).
         """
         self.memory_size = memory_size
         self.feature_dim = feature_dim
-        
+        self.herding_pool = herding_pool
+
         # exemplar_set[i] = list of samples (np.ndarray) cho lớp thứ i
         self.exemplar_set = []
         self.exemplar_labels = []  # nhãn tương ứng
@@ -43,6 +47,15 @@ class ExemplarManager:
             total_classes = len(self.exemplar_set) + 1
             m = self.memory_size // total_classes
 
+        # ── Candidate pooling: nếu lớp quá lớn, random lấy pool trước khi herding ──
+        # Giảm chi phí herding (O(m×N)) và cả trích xuất feature. Seed theo class_label
+        # để tái lập được. Vẫn giữ nguyên số exemplar m (buffer 1% không đổi) vì pool >= m.
+        class_data = np.asarray(class_data)
+        if self.herding_pool and len(class_data) > self.herding_pool:
+            rng = np.random.default_rng(int(class_label))
+            pool_idx = rng.choice(len(class_data), size=self.herding_pool, replace=False)
+            class_data = class_data[pool_idx]
+
         # Tính feature representations
         model.eval()
         features_list = []
@@ -58,27 +71,25 @@ class ExemplarManager:
             features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-10)
 
         class_mean = np.mean(features, axis=0)
+        class_mean = class_mean / (np.linalg.norm(class_mean) + 1e-8)
 
-        # Herding selection: chọn m mẫu sao cho mean gần class mean nhất
+        # ── Herding selection kiểu iCaRL chuẩn (port từ AFSIC-IDS/utils/memory.py) ──
+        # Dùng TÍCH VÔ HƯỚNG thay cho khoảng cách Euclid trên mảng (N,d):
+        #   target = k*class_mean - S ; i = argmax( features · target )
+        # Mỗi vòng chỉ cấp phát mảng `scores` dài N (không phải mảng N×d), nên
+        # KHÔNG bị thrash bộ nhớ -> chạy xong được kể cả khi buffer lớn
+        # (bản cũ của HFIN cấp phát N×d mỗi vòng -> treo khi m,N lớn).
+        m = int(min(m, len(class_data)))
+        S = np.zeros(features.shape[1], dtype=np.float32)
+        mask = np.zeros(len(class_data), dtype=bool)
         exemplar = []
-        exemplar_features = np.zeros((1, features.shape[1]))
-        
-        selected_indices = []
-        for i in range(min(m, len(class_data))):
-            # Tìm mẫu minimizes khoảng cách giữa running mean và class mean
-            running_mean = exemplar_features / (i + 1)
-            candidate_means = class_mean - (running_mean + features) / (i + 1)
-            # Dùng BÌNH PHƯƠNG khoảng cách thay cho norm: bỏ sqrt (nhanh hơn) mà
-            # argmin không đổi vì sqrt đơn điệu -> mẫu được chọn y hệt.
-            distances = np.einsum('ij,ij->i', candidate_means, candidate_means)
-
-            # Loại bỏ indices đã chọn (Vectorized operations cho tốc độ cực nhanh với mảng lớn)
-            if selected_indices:
-                distances[selected_indices] = float('inf')
-
-            best_idx = int(np.argmin(distances))
-            selected_indices.append(best_idx)
-            exemplar_features += features[best_idx:best_idx+1]
+        for k in range(1, m + 1):
+            target_vector = k * class_mean - S
+            scores = features @ target_vector      # (N,) — 1 matvec, nhẹ RAM
+            scores[mask] = -np.inf
+            best_idx = int(np.argmax(scores))
+            mask[best_idx] = True
+            S += features[best_idx]
             exemplar.append(class_data[best_idx])
 
         self.exemplar_set.append(exemplar)
