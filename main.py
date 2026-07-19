@@ -691,22 +691,14 @@ def main():
                     f'_global{global_round:03d}_acc{acc:.1f}.pth'
                 )
                 ckpt_path = os.path.join(args.checkpoint_dir, ckpt_filename)
-                # --- Collect Edge Server memories for full checkpoint ---
-                edge_memories = []
-                for edge in edge_servers:
-                    edge_memories.append({
-                        'exemplar_set': edge.exemplar_manager.exemplar_set,
-                        'exemplar_labels': edge.exemplar_manager.exemplar_labels
-                    })
 
-                torch.save({
+                ckpt_payload = {
                     'task_id':       task_id,
                     'round_in_task': round_in_task + 1,
                     'global_round':  global_round,
                     'method':        args.method,
                     'classes_learned': classes_learned,
                     'model_state_dict': model_g.state_dict(),
-                    'edge_memories': edge_memories, # Important for full resume
                     'metrics': {
                         'accuracy':           acc,
                         'precision_micro':    results_eval.get('precision_micro', 0),
@@ -720,23 +712,24 @@ def main():
                         'f1_weighted':        f1_weighted,
                         'loss':               loss,
                     },
-                }, ckpt_path)
+                }
+
+                # 1) Checkpoint moi round: CHI model + metrics (vai MB) -> giu TAT CA
+                torch.save(ckpt_payload, ckpt_path)
                 logger.info(f'  [CKPT] Saved: {ckpt_filename}')
 
-                # ── Chi giu lai N checkpoint moi nhat (tranh day dia Kaggle ~20GB;
-                #    moi ckpt chua edge_memories cua 20 edge co the ~1GB) ──────────
-                keep = getattr(args, 'keep_ckpts', 2)
-                if keep > 0:
-                    all_ckpts = sorted(
-                        glob.glob(os.path.join(args.checkpoint_dir, f'ckpt_{args.method}_*.pth')),
-                        key=os.path.getmtime
-                    )
-                    for old_path in all_ckpts[:-keep]:
-                        try:
-                            os.remove(old_path)
-                            logger.info(f'  [CKPT] Removed old: {os.path.basename(old_path)}')
-                        except OSError:
-                            pass
+                # 2) File resume duy nhat (ghi de moi round): kem edge_memories (~GB)
+                #    de resume day du exemplar; ghi qua file .tmp roi replace cho an toan.
+                edge_memories = []
+                for edge in edge_servers:
+                    edge_memories.append({
+                        'exemplar_set': edge.exemplar_manager.exemplar_set,
+                        'exemplar_labels': edge.exemplar_manager.exemplar_labels
+                    })
+                resume_path = os.path.join(args.checkpoint_dir, f'resume_{args.method}_latest.pth')
+                tmp_path = resume_path + '.tmp'
+                torch.save({**ckpt_payload, 'edge_memories': edge_memories}, tmp_path)
+                os.replace(tmp_path, resume_path)
 
                 # Lưu accuracy phục vụ tính Forgetting
                 task_accuracies_per_class[global_round] = {

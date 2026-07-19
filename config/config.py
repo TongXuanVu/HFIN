@@ -135,9 +135,6 @@ def args_parser():
                         ))
     parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints/',
                         help='Thu muc de luu checkpoint trong qua trinh train.')
-    parser.add_argument('--keep_ckpts', type=int, default=2,
-                        help='So checkpoint moi nhat duoc giu lai (0 = giu tat ca). '
-                             'Moi ckpt kem edge_memories co the ~1GB nen mac dinh chi giu 2.')
     parser.add_argument('--test_checkpoint_dir', type=str, default='',
                         help=(
                             'Thu muc chua checkpoint de load khi chay --mode test. '
