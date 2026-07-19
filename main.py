@@ -327,7 +327,7 @@ def main():
     num_features = X_test.shape[1]
     args.total_classes = 34 # CIC-IoT23 has 34 classes
     
-    # Ghi đè args.num_clients từ file config vì FL framework đã fix 10 clients
+    # Ghi đè args.num_clients từ file config vì FL partition đã fix 100 clients
     args.num_clients = NUM_FL_CLIENTS
     
     logger.info(f'Features: {num_features}, Global Test: {len(X_test)}')
@@ -529,8 +529,10 @@ def main():
             
         logger.info(f'\nLoading data for Task {task_id} (Classes: {task_classes})...')
         
-        # --- Mô phỏng kịch bản tăng dần số lượng Client (từ 5 đến 10) ---
-        active_num_clients = min(args.num_clients, 5 + task_id)
+        # --- Mô phỏng kịch bản tăng dần số lượng Client: 50% -> 100% theo task ---
+        # (10 clients: 5,6,...,10 | 100 clients: 50,60,...,100 — khớp task_active_schedule của data)
+        active_ratio = min(1.0, 0.5 + 0.1 * task_id)
+        active_num_clients = min(args.num_clients, max(1, int(round(args.num_clients * active_ratio))))
         logger.info(f'[SCENARIO] Active clients for Task {task_id}: {active_num_clients} clients (0 to {active_num_clients-1})')
         for e_id, edge in enumerate(edge_servers):
             active_edge_clients = [c for c in edge_client_map[e_id] if c < active_num_clients]

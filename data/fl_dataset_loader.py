@@ -1,9 +1,10 @@
 import os
+import json
 import torch
 import numpy as np
 
-# Số clients theo FL partition mới
-NUM_FL_CLIENTS = 10
+# Số clients theo FL partition mới (kịch bản 100 client, data_split/100 client)
+NUM_FL_CLIENTS = 100
 
 # Phân bố class theo Task (đã tuần tự 0-33)
 FL_TASK_CLASSES_SEQUENTIAL = {
@@ -22,6 +23,48 @@ GLOBAL_LABEL_MAP = {}
 # Số mẫu tối đa mỗi lớp trong tập Test (Đặt rất lớn để tắt downsampling)
 MAX_VAL_SAMPLES_PER_CLASS = 100000000
 
+# ──────────────────────────────────────────────────────────────────────
+# Remap label: data 100-client giữ NGUYÊN label ID gốc (preserve_original_label_ids)
+# với thứ tự task phi tuần tự (task_mapping_label_ids.json).
+# Code CIL yêu cầu label tuần tự 0..33 theo thứ tự task -> build LUT remap.
+# Data cũ (đã tuần tự sẵn) không có file json này -> LUT = None, giữ nguyên label.
+# ──────────────────────────────────────────────────────────────────────
+_LABEL_LUT_CACHE = {}
+
+def _get_label_lut(data_dir):
+    """Trả về LUT (tensor) map label gốc -> label tuần tự, hoặc None nếu data đã tuần tự."""
+    if data_dir in _LABEL_LUT_CACHE:
+        return _LABEL_LUT_CACHE[data_dir]
+
+    map_file = os.path.join(data_dir, "task_mapping_label_ids.json")
+    lut = None
+    if os.path.exists(map_file):
+        with open(map_file, "r") as f:
+            task_orders = json.load(f)  # list[list[int]]: label gốc theo từng task
+        flat = [c for task in task_orders for c in task]
+        lut = torch.full((max(flat) + 1,), -1, dtype=torch.long)
+        for seq_id, orig_id in enumerate(flat):
+            lut[orig_id] = seq_id
+        print(f"[FL LOADER] Remap label gốc -> tuần tự theo: {map_file}")
+        print(f"[FL LOADER] Thứ tự task (label gốc): {task_orders}")
+
+    _LABEL_LUT_CACHE[data_dir] = lut
+    return lut
+
+
+def _remap_labels(y, data_dir):
+    """Áp dụng LUT remap cho tensor label y (no-op nếu data đã tuần tự)."""
+    lut = _get_label_lut(data_dir)
+    if lut is None:
+        return y
+    if not torch.is_tensor(y):
+        y = torch.as_tensor(y)
+    y_new = lut[y.long()]
+    if (y_new < 0).any():
+        bad = torch.unique(y[y_new < 0]).tolist()
+        raise ValueError(f"[FL LOADER] Label {bad} không có trong task_mapping_label_ids.json")
+    return y_new
+
 def load_fl_global_test(data_dir):
     """
     Load tập test toàn cục trực tiếp và thực hiện downsampling để tiết kiệm RAM.
@@ -39,6 +82,8 @@ def load_fl_global_test(data_dir):
         X, y = data['x'], data['y']
     else:
         X, y = data
+
+    y = _remap_labels(y, data_dir)
 
     # ──────────────────────────────────────────────────────────────────
     # Downsampling tập Test để chống sập RAM (14M mẫu -> ~100k mẫu)
@@ -79,6 +124,8 @@ def load_fl_client_task(data_dir, task_id, client_id):
         X, y = data['x'], data['y']
     else:
         X, y = data
+
+    y = _remap_labels(y, data_dir)
 
     return X, y
 

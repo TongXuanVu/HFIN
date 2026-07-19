@@ -63,8 +63,13 @@ def FedWeightedAvg(model_weights_list, weights):
         state_dict trung bình có trọng số
     """
     total_weight = sum(weights)
+    if total_weight <= 0:
+        # Không edge nào có dữ liệu ở round này -> giữ nguyên weights đầu tiên,
+        # tránh ZeroDivisionError (mọi edge rỗng / WTO không chọn client nào).
+        print('[FedWeightedAvg] WARNING: tổng sample = 0, bỏ qua aggregate round này.')
+        return copy.deepcopy(model_weights_list[0])
     weights_normalized = [w / total_weight for w in weights]
-    
+
     w_avg = copy.deepcopy(model_weights_list[0])
     for key in w_avg.keys():
         w_avg[key] = w_avg[key] * weights_normalized[0]
