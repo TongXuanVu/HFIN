@@ -13,6 +13,7 @@ Luồng huấn luyện:
    e. Đánh giá global model
 """
 import os
+import glob
 import sys
 import copy
 import random
@@ -721,6 +722,21 @@ def main():
                     },
                 }, ckpt_path)
                 logger.info(f'  [CKPT] Saved: {ckpt_filename}')
+
+                # ── Chi giu lai N checkpoint moi nhat (tranh day dia Kaggle ~20GB;
+                #    moi ckpt chua edge_memories cua 20 edge co the ~1GB) ──────────
+                keep = getattr(args, 'keep_ckpts', 2)
+                if keep > 0:
+                    all_ckpts = sorted(
+                        glob.glob(os.path.join(args.checkpoint_dir, f'ckpt_{args.method}_*.pth')),
+                        key=os.path.getmtime
+                    )
+                    for old_path in all_ckpts[:-keep]:
+                        try:
+                            os.remove(old_path)
+                            logger.info(f'  [CKPT] Removed old: {os.path.basename(old_path)}')
+                        except OSError:
+                            pass
 
                 # Lưu accuracy phục vụ tính Forgetting
                 task_accuracies_per_class[global_round] = {
