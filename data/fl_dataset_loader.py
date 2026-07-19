@@ -36,9 +36,15 @@ def _get_label_lut(data_dir):
     if data_dir in _LABEL_LUT_CACHE:
         return _LABEL_LUT_CACHE[data_dir]
 
-    map_file = os.path.join(data_dir, "task_mapping_label_ids.json")
+    # Tìm json trong data_dir trước, fallback về file nhúng trong repo
+    # (trường hợp Kaggle dataset upload thiếu file json)
+    candidates = [
+        os.path.join(data_dir, "task_mapping_label_ids.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "task_mapping_label_ids.json"),
+    ]
+    map_file = next((p for p in candidates if os.path.exists(p)), None)
     lut = None
-    if os.path.exists(map_file):
+    if map_file is not None:
         with open(map_file, "r") as f:
             task_orders = json.load(f)  # list[list[int]]: label gốc theo từng task
         flat = [c for task in task_orders for c in task]
@@ -114,7 +120,10 @@ def load_fl_client_task(data_dir, task_id, client_id):
     """
     task_num = task_id + 1
     filename = f"client_{client_id}_task_{task_num}.pt"
+    # Hỗ trợ cả 2 layout: data_dir/federated_data/*.pt hoặc *.pt phẳng ngay data_dir
     client_file = os.path.join(data_dir, "federated_data", filename)
+    if not os.path.exists(client_file):
+        client_file = os.path.join(data_dir, filename)
 
     if not os.path.exists(client_file):
         return None, None
