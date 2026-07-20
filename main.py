@@ -722,6 +722,16 @@ def main():
                 }, ckpt_path)
                 logger.info(f'  [CKPT] Saved: {ckpt_filename}')
 
+                # ── Chi giu checkpoint MOI NHAT: xoa cac ckpt cu (moi ckpt kem
+                #    edge_memories ~1GB, giu het se day dia Kaggle ~20GB) ─────────
+                for old_name in os.listdir(args.checkpoint_dir):
+                    if (old_name.startswith(f'ckpt_{args.method}_') and old_name.endswith('.pth')
+                            and old_name != ckpt_filename):
+                        try:
+                            os.remove(os.path.join(args.checkpoint_dir, old_name))
+                        except OSError:
+                            pass
+
                 # Lưu accuracy phục vụ tính Forgetting
                 task_accuracies_per_class[global_round] = {
                     i: f1 for i, f1 in enumerate(results_eval['per_class_f1'])
