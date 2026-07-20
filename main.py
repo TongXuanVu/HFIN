@@ -722,15 +722,20 @@ def main():
                 }, ckpt_path)
                 logger.info(f'  [CKPT] Saved: {ckpt_filename}')
 
-                # ── Chi giu checkpoint MOI NHAT: xoa cac ckpt cu (moi ckpt kem
-                #    edge_memories ~1GB, giu het se day dia Kaggle ~20GB) ─────────
-                for old_name in os.listdir(args.checkpoint_dir):
-                    if (old_name.startswith(f'ckpt_{args.method}_') and old_name.endswith('.pth')
-                            and old_name != ckpt_filename):
-                        try:
-                            os.remove(os.path.join(args.checkpoint_dir, old_name))
-                        except OSError:
-                            pass
+                # ── Chi giu 5 checkpoint MOI NHAT: xoa cac ckpt cu hon (moi ckpt kem
+                #    edge_memories ~1GB; giu 5 ban de phong ban moi nhat bi ghi do
+                #    khi crash/day dia van con ban lanh truoc do) ─────────────────
+                KEEP_LAST_CKPTS = 5
+                ckpt_list = sorted(
+                    (os.path.join(args.checkpoint_dir, n) for n in os.listdir(args.checkpoint_dir)
+                     if n.startswith(f'ckpt_{args.method}_') and n.endswith('.pth')),
+                    key=os.path.getmtime
+                )
+                for old_path in ckpt_list[:-KEEP_LAST_CKPTS]:
+                    try:
+                        os.remove(old_path)
+                    except OSError:
+                        pass
 
                 # Lưu accuracy phục vụ tính Forgetting
                 task_accuracies_per_class[global_round] = {
