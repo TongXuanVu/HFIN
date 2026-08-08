@@ -40,6 +40,12 @@ def args_parser():
                         help=('Ti le bo nho exemplar theo TONG so mau train. '
                               '0 = tat (dung --memory_size co dinh). '
                               'Vi du 0.01 = bo nho exemplar moi Edge = 1%% tong du lieu.'))
+    parser.add_argument('--fewshot_dir', type=str, default='',
+                        help=('Duong dan thu muc chua du lieu FEW-SHOT (client_*_task_*.pt cho '
+                              'task 2..6). De trong = dung full data. Task 1 (base) LUON lay tu '
+                              '--data_path. Vi du tren Kaggle: '
+                              '/kaggle/input/.../iot100client_fewshot/federated_data_fewshot '
+                              'hoac .../federated_data_10shot'))
     parser.add_argument('--herding_pool', type=int, default=200000,
                         help=('Candidate pooling cho herding: neu 1 lop co nhieu hon '
                               'herding_pool mau thi random lay pool nay roi moi herding '

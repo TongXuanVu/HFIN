@@ -114,16 +114,52 @@ def load_fl_global_test(data_dir):
     return X, y
 
 
+# Đường dẫn thư mục chứa dữ liệu FEW-SHOT (client_*_task_*.pt cho task 2..6).
+# None = dùng dữ liệu full ở data_dir.
+#
+# Vì sao là ĐƯỜNG DẪN chứ không phải tên thư mục con: trên Kaggle bộ full và hai
+# bộ few-shot nằm ở hai thư mục cha khác nhau, ví dụ
+#     .../iot100client/100client/                              <- full, task 1..6 (phẳng)
+#     .../iot100client/iot100client_fewshot/federated_data_fewshot/   <- 1%, task 2..6
+#     .../iot100client/iot100client_fewshot/federated_data_10shot/    <- 10-shot, task 2..6
+#
+# Dữ liệu few-shot đã sinh sẵn bằng "100 client/make_fewshot.py", KHÔNG lấy mẫu
+# lại trong code để không lệch so với các phương pháp khác đã chạy.
+#
+# Task 0 (base) LUÔN lấy từ data_dir (full data) — hai bộ few-shot cố tình không
+# có task 1.
+FEWSHOT_DIR = None
+
+
+def set_fewshot_dir(path):
+    global FEWSHOT_DIR
+    FEWSHOT_DIR = path or None
+    if FEWSHOT_DIR:
+        if not os.path.isdir(FEWSHOT_DIR):
+            raise FileNotFoundError(f"[FL LOADER] Khong thay thu muc few-shot: {FEWSHOT_DIR}")
+        n = len([f for f in os.listdir(FEWSHOT_DIR) if f.endswith('.pt')])
+        print(f"[FL LOADER] FEW-SHOT tu task 1 tro di: {FEWSHOT_DIR} ({n} file .pt)")
+    else:
+        print("[FL LOADER] Dung du lieu FULL cho moi task")
+
+
 def load_fl_client_task(data_dir, task_id, client_id):
     """
     Load file train .pt cho 1 client cụ thể (labels tuần tự).
     """
     task_num = task_id + 1
     filename = f"client_{client_id}_task_{task_num}.pt"
-    # Hỗ trợ cả 2 layout: data_dir/federated_data/*.pt hoặc *.pt phẳng ngay data_dir
-    client_file = os.path.join(data_dir, "federated_data", filename)
-    if not os.path.exists(client_file):
-        client_file = os.path.join(data_dir, filename)
+
+    if FEWSHOT_DIR and task_id > 0:
+        # CHI tim trong thu muc few-shot. Khong fallback sang full: client nao
+        # khong co file o day thi coi nhu khong co du lieu cho task nay — neu
+        # fallback se am tham dung full data va lam hong ca thi nghiem.
+        client_file = os.path.join(FEWSHOT_DIR, filename)
+    else:
+        # Ho tro ca 2 layout: data_dir/federated_data/*.pt hoac *.pt phang
+        client_file = os.path.join(data_dir, "federated_data", filename)
+        if not os.path.exists(client_file):
+            client_file = os.path.join(data_dir, filename)
 
     if not os.path.exists(client_file):
         return None, None
@@ -142,9 +178,14 @@ def load_fl_client_task(data_dir, task_id, client_id):
 def update_clients_for_task(clients_dict, data_dir, task_id):
     """
     Cập nhật dữ liệu trong RAM của tất cả clients thành dữ liệu của Task hiện tại.
+
+    Kịch bản few-shot chọn bằng FEWSHOT_DIR (xem set_fewshot_dir), không lấy
+    mẫu lại ở đây.
     """
     task_num = task_id + 1
-    print(f"\n[FL LOADER] Đang tải dữ liệu Task {task_num} lên {len(clients_dict)} Clients...")
+    tag = "" if not (FEWSHOT_DIR and task_id > 0) else " | FEW-SHOT"
+    print(f"\n[FL LOADER] Đang tải dữ liệu Task {task_num} lên {len(clients_dict)} Clients...{tag}")
+    tong = 0
 
     for cid, client in clients_dict.items():
         X_train, y_train = load_fl_client_task(data_dir, task_id, cid)
@@ -155,8 +196,10 @@ def update_clients_for_task(clients_dict, data_dir, task_id):
         else:
             client.train_data   = X_train
             client.train_labels = y_train
+            tong += len(X_train)
             unique_labels = torch.unique(y_train).tolist()
             print(f"   -> Client {cid:2d}: {len(X_train):6,} mẫu | Labels: {unique_labels}")
+    print(f"   [TONG] Task {task_num}: {tong:,} mau tren {len(clients_dict)} client")
 
 
 
@@ -174,7 +217,13 @@ def count_total_train_samples(data_dir, num_clients=NUM_FL_CLIENTS,
     if num_tasks is None:
         num_tasks = len(FL_TASK_CLASSES_SEQUENTIAL)
 
-    fed_dir = os.path.join(data_dir, "federated_data")
+    # Cache phai tach theo FEWSHOT_DIR: bo full va hai bo few-shot co so mau khac
+    # nhau ~100 lan, dung chung cache se cho replay_ratio sai hoan toan.
+    # Ghi cache vao chinh thu muc few-shot khi dang chay few-shot.
+    key = FEWSHOT_DIR or "full"
+    fed_dir = FEWSHOT_DIR if FEWSHOT_DIR else os.path.join(data_dir, "federated_data")
+    if not os.path.isdir(fed_dir):
+        fed_dir = data_dir
     cache_file = os.path.join(fed_dir, "_train_sample_count.json")
 
     # 1) Doc cache neu khop cau hinh
@@ -182,8 +231,11 @@ def count_total_train_samples(data_dir, num_clients=NUM_FL_CLIENTS,
         try:
             with open(cache_file, "r") as f:
                 meta = json.load(f)
-            if meta.get("num_clients") == num_clients and meta.get("num_tasks") == num_tasks:
-                print(f"[FL LOADER] Tong so mau train (cache): {meta['total']:,}")
+            if (meta.get("num_clients") == num_clients
+                    and meta.get("num_tasks") == num_tasks
+                    and meta.get("subdir", "full") == key):
+                print(f"[FL LOADER] Tong so mau train (cache, {os.path.basename(key)}): "
+                      f"{meta['total']:,}")
                 return int(meta["total"])
         except Exception:
             pass  # cache hong -> tinh lai
@@ -206,7 +258,7 @@ def count_total_train_samples(data_dir, num_clients=NUM_FL_CLIENTS,
             os.makedirs(fed_dir, exist_ok=True)
             with open(cache_file, "w") as f:
                 json.dump({"total": total, "num_clients": num_clients,
-                           "num_tasks": num_tasks}, f)
+                           "num_tasks": num_tasks, "subdir": key}, f)
         except Exception:
             pass
 

@@ -28,7 +28,7 @@ from config.config import args_parser
 from data.fl_dataset_loader import (
     load_fl_global_test, update_clients_for_task,
     FL_TASK_CLASSES_SEQUENTIAL, NUM_FL_CLIENTS, assign_clients_to_edges,
-    count_total_train_samples
+    count_total_train_samples, set_fewshot_dir
 )
 from data.dataset import NetFlowDataset
 from models.feature_extractor import CNN1DFeatureExtractor, LeNetTabular, weights_init
@@ -313,6 +313,11 @@ def main():
     logger.info(f'Clients: {args.num_clients}, Edge Servers: {args.num_edge_servers}')
     logger.info(f'Base classes: {args.num_base_classes}, Task size: {args.task_size}')
     logger.info(f'Total classes: {args.total_classes}')
+
+    # Chon kich ban du lieu: full / fewshot 1% / 10-shot
+    _fs = getattr(args, 'fewshot_dir', '') or None
+    set_fewshot_dir(_fs)
+    logger.info(f'Fewshot dir: {_fs or "(khong — dung full data)"}')
 
     if args.mode == 'test':
         _run_test_mode(args, logger)
@@ -722,13 +727,21 @@ def main():
                 }, ckpt_path)
                 logger.info(f'  [CKPT] Saved: {ckpt_filename}')
 
-                # ── Chi giu 5 checkpoint MOI NHAT: xoa cac ckpt cu hon (moi ckpt kem
-                #    edge_memories ~1GB; giu 5 ban de phong ban moi nhat bi ghi do
-                #    khi crash/day dia van con ban lanh truoc do) ─────────────────
+                # ── Don checkpoint cu ──────────────────────────────────────────
+                # Moi checkpoint ~594 MB vi kem edge_memories (rieng trong so mo
+                # hinh chi 0,29 MB), nen khong the giu ca 180 round (~107 GB) trong
+                # gioi han 20 GB cua Kaggle.
+                #
+                # Giu 5 ban moi nhat (phong khi ban moi nhat hong luc crash).
+                # File *_FINAL.pth — checkpoint cuoi moi task — duoc LOAI khoi danh
+                # sach nay nen KHONG BAO GIO bi xoa. Truoc day khong co file FINAL,
+                # nen checkpoint cuoi task 0 bi xoa ngay khi sang round 35 va khong
+                # con gi de cac kich ban few-shot dung chung task 0 voi ban full.
                 KEEP_LAST_CKPTS = 5
                 ckpt_list = sorted(
                     (os.path.join(args.checkpoint_dir, n) for n in os.listdir(args.checkpoint_dir)
-                     if n.startswith(f'ckpt_{args.method}_') and n.endswith('.pth')),
+                     if n.startswith(f'ckpt_{args.method}_') and n.endswith('.pth')
+                     and not n.endswith('_FINAL.pth')),
                     key=os.path.getmtime
                 )
                 for old_path in ckpt_list[:-KEEP_LAST_CKPTS]:
@@ -774,6 +787,36 @@ def main():
             final_task_results = evaluate_model(model_g, test_dataset, range(classes_learned), args.device)
             if task_id < num_tasks - 1:
                 print_evaluation_report(final_task_results, task_id, label_map, logger)
+
+        # === CHECKPOINT CUOI TASK — ten co dinh, KHONG BAO GIO bi don ===
+        #
+        # Vi sao can: cac kich ban few-shot phai dung chung task 0 voi ban full
+        # data, tuc resume tu checkpoint cuoi task 0. Checkpoint theo round bi
+        # xoa boi logic don dep (chi giu 5 ban moi nhat + ban moi nhat moi task),
+        # va ten cua no phu thuoc accuracy nen kho tham chieu. File nay co ten
+        # on dinh, luu SAU khi da ap dung WA (voi method 'wa') nen dung la trang
+        # thai cuoi cung cua task.
+        final_ckpt = os.path.join(
+            args.checkpoint_dir, f'ckpt_{args.method}_task{task_id:02d}_FINAL.pth')
+        try:
+            edge_memories_final = [{
+                'exemplar_set': edge.exemplar_manager.exemplar_set,
+                'exemplar_labels': edge.exemplar_manager.exemplar_labels
+            } for edge in edge_servers]
+            torch.save({
+                'task_id':         task_id,
+                'round_in_task':   num_rounds,
+                'global_round':    global_round,
+                'method':          args.method,
+                'classes_learned': classes_learned,
+                'model_state_dict': model_g.state_dict(),
+                'edge_memories':   edge_memories_final,
+                'fewshot_dir':     getattr(args, 'fewshot_dir', '') or 'full',
+            }, final_ckpt)
+            logger.info(f'  [CKPT-TASK] Da luu checkpoint cuoi Task {task_id}: '
+                        f'{os.path.basename(final_ckpt)}')
+        except Exception as e:
+            logger.error(f'  [CKPT-TASK] Loi khi luu checkpoint cuoi task: {e}')
 
     # === Kết thúc: Đánh giá cuối cùng & Forgetting Metric ===
     from evaluate import compute_forgetting
