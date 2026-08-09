@@ -313,6 +313,11 @@ def main():
     logger.info(f'Clients: {args.num_clients}, Edge Servers: {args.num_edge_servers}')
     logger.info(f'Base classes: {args.num_base_classes}, Task size: {args.task_size}')
     logger.info(f'Total classes: {args.total_classes}')
+    # Ghi ro ngan sach huan luyen: truoc day epochs_local khong duoc log ra nen
+    # khong the biet lan chay cu dung 5 hay 1 neu chi doc log.
+    logger.info(f'Rounds/task: {args.epochs_base} (base) / {args.epochs_incremental} '
+                f'(incremental) | Local epochs/round: {args.epochs_local} '
+                f'-> {args.epochs_incremental * args.epochs_local} luot/task')
 
     # Chon kich ban du lieu: full / fewshot 1% / 10-shot
     _fs = getattr(args, 'fewshot_dir', '') or None

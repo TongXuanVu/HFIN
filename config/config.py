@@ -70,8 +70,12 @@ def args_parser():
                         help='Alpha cho cac lop Attack')
 
     # === Huan luyen ===
-    parser.add_argument('--epochs_local', type=int, default=5,
-                        help='So epochs huan luyen local moi round')
+    parser.add_argument('--epochs_local', type=int, default=1,
+                        help=('So epochs huan luyen local moi round. '
+                              'Mac dinh doi tu 5 -> 1 (2026-08-09) de khop ngan sach '
+                              'tinh toan voi AFSIC-IDS va SPCIL-FL (30 round x 1 epoch). '
+                              'CANH BAO: cac lan chay TRUOC ngay nay dung 5, tuc gap 5 lan '
+                              'so luot huan luyen — khong so truc tiep duoc voi lan chay moi.'))
     parser.add_argument('--batch_size', type=int, default=1024,
                         help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=0.001,
