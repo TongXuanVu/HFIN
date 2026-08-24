@@ -25,11 +25,17 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config.config import args_parser
+import data.fl_dataset_loader as _fl
 from data.fl_dataset_loader import (
     load_fl_global_test, update_clients_for_task,
-    FL_TASK_CLASSES_SEQUENTIAL, NUM_FL_CLIENTS, assign_clients_to_edges,
-    count_total_train_samples, set_fewshot_dir
+    FL_TASK_CLASSES_SEQUENTIAL, assign_clients_to_edges,
+    count_total_train_samples, set_fewshot_dir,
+    set_dataset, so_client_active
 )
+# NUM_FL_CLIENTS la int nen KHONG import truc tiep: set_dataset() gan lai no
+# trong module loader, ban sao import o day se khong doi theo. Doc qua
+# `_fl.NUM_FL_CLIENTS` de luon lay gia tri hien tai.
+# (FL_TASK_CLASSES_SEQUENTIAL la dict va duoc sua tai cho nen import duoc.)
 from data.dataset import NetFlowDataset
 from models.feature_extractor import CNN1DFeatureExtractor, LeNetTabular, weights_init
 from models.network import HFINNetwork
@@ -329,16 +335,34 @@ def main():
         return
     
     # === Load & Tiền xử lý dữ liệu tự động ===
-    logger.info('\n[1/4] Loading global test data for CIC-IoT23...')
-    
+    # Phai set_dataset TRUOC khi load bat cu gi: no quyet dinh so task, lich
+    # client, va co remap nhan hay khong.
+    set_dataset(args.dataset)
+    logger.info(f'\n[1/4] Loading global test data for {args.dataset}...')
+
     # Global test data (dùng chung cho mọi task, đánh giá global model)
     X_test, y_test = load_fl_global_test(args.data_path)
-    
+
     num_features = X_test.shape[1]
-    args.total_classes = 34 # CIC-IoT23 has 34 classes
-    
+    # KHONG ep cung total_classes nua. Dong cu la `args.total_classes = 34`,
+    # nen chay bo IoV se dung tang ra 34 lop thay vi 13 — tang ra sai kich
+    # thuoc, macro-F1 chia cho 34 thay vi 13, va khong co loi nao duoc nem.
+    # Gio kiem chung nguoc lai: config phai khop voi du lieu thuc te.
+    _y = y_test if torch.is_tensor(y_test) else torch.as_tensor(y_test)
+    so_lop_thuc = int(_y.max()) + 1
+    if so_lop_thuc != args.total_classes:
+        raise SystemExit(
+            f'[LOI] Global test co {so_lop_thuc} lop nhung --dataset '
+            f'{args.dataset} khai bao {args.total_classes}. '
+            f'Kiem tra --data_path co tro dung bo du lieu khong.')
+    _feat_mong = getattr(args, 'num_features', num_features)
+    if num_features != _feat_mong:
+        raise SystemExit(
+            f'[LOI] Global test co {num_features} feature nhung --dataset '
+            f'{args.dataset} mong doi {_feat_mong}.')
+
     # Ghi đè args.num_clients từ file config vì FL partition đã fix 100 clients
-    args.num_clients = NUM_FL_CLIENTS
+    args.num_clients = _fl.NUM_FL_CLIENTS
     
     logger.info(f'Features: {num_features}, Global Test: {len(X_test)}')
     logger.info(f'Total classes: {args.total_classes} | Clients: {args.num_clients} | Edges: {args.num_edge_servers}')
@@ -539,10 +563,13 @@ def main():
             
         logger.info(f'\nLoading data for Task {task_id} (Classes: {task_classes})...')
         
-        # --- Mô phỏng kịch bản tăng dần số lượng Client: 50% -> 100% theo task ---
-        # (10 clients: 5,6,...,10 | 100 clients: 50,60,...,100 — khớp task_active_schedule của data)
-        active_ratio = min(1.0, 0.5 + 0.1 * task_id)
-        active_num_clients = min(args.num_clients, max(1, int(round(args.num_clients * active_ratio))))
+        # --- Kịch bản client tham gia dần theo task ---
+        # Lay tu bang lich cua tung bo (fl_dataset_loader.CAU_HINH_BO), khong
+        # tinh bang cong thuc nua. Cong thuc cu `0.5 + 0.1*task_id` cho ra
+        # 50/60/70/80/90 — dung cho IoT (6 task) nhung SAI o task cuoi cua IoV,
+        # vi bo IoV chi co 5 task va task cuoi phai la 100 client chu khong
+        # phai 90. Thieu 10 client do se lam mat toan bo shard cua id 90-99.
+        active_num_clients = min(args.num_clients, max(1, so_client_active(task_id)))
         logger.info(f'[SCENARIO] Active clients for Task {task_id}: {active_num_clients} clients (0 to {active_num_clients-1})')
         for e_id, edge in enumerate(edge_servers):
             active_edge_clients = [c for c in edge_client_map[e_id] if c < active_num_clients]

@@ -13,8 +13,10 @@ def args_parser():
 
     # === Dataset ===
     parser.add_argument('--dataset', type=str, default='cic_iot23',
-                        choices=['nf_ton_iot', 'nf_uq_nids', 'nf_unsw_nb15', 'cic_iot23'],
-                        help='Ten dataset (mac dinh: cic_iot23)')
+                        choices=['nf_ton_iot', 'nf_uq_nids', 'nf_unsw_nb15',
+                                 'cic_iot23', 'can_iov'],
+                        help=('Ten dataset. cic_iot23 = 34 lop, 6 task, 180 round. '
+                              'can_iov = CAN-bus 13 lop, 5 task, 150 round.'))
     parser.add_argument('--data_path', type=str, default=r'c:\FederatedLearning\FL\core\data_split',
                         help='Duong dan thu muc raw chua file CSV va .pkl')
     parser.add_argument('--num_features', type=int, default=46,
@@ -180,13 +182,30 @@ def args_parser():
     return args
 
 
+# Tham so phu thuoc BO DU LIEU. Truoc day ham _fill_dataset_defaults ep cung
+# gia tri cua CIC-IoT23 va ghi de ca `args.dataset`, nen truyen --dataset can_iov
+# cung khong co tac dung. Gio doc theo bang nay.
+MAC_DINH_BO = {
+    'cic_iot23': dict(total_classes=34, num_base_classes=6, task_size=5,
+                      num_features=46, so_task=6),
+    'can_iov':   dict(total_classes=13, num_base_classes=3, task_size=3,
+                      num_features=31, so_task=5),
+}
+
+
 def _fill_dataset_defaults(args):
-    """Tu dong dien total_classes, num_base_classes, task_size tu dataset CIC-IoT23."""
-    args.total_classes    = 34
-    args.num_base_classes = 6
-    args.task_size        = 5
-    args.dataset          = 'cic_iot23'
+    """Dien total_classes, num_base_classes, task_size THEO args.dataset."""
+    ten = getattr(args, 'dataset', 'cic_iot23')
+    if ten not in MAC_DINH_BO:
+        raise SystemExit(f'[CONFIG] --dataset {ten} chua duoc ho tro. '
+                         f'Chi co: {list(MAC_DINH_BO)}')
+    d = MAC_DINH_BO[ten]
+    args.total_classes    = d['total_classes']
+    args.num_base_classes = d['num_base_classes']
+    args.task_size        = d['task_size']
+    args.num_features     = d['num_features']
     print(f'[CONFIG] Dataset: {args.dataset}')
     print(f'         Total classes: {args.total_classes} | '
           f'Base: {args.num_base_classes} | '
-          f'Step: {args.task_size} class/task')
+          f'Step: {args.task_size} class/task | '
+          f'{d["so_task"]} task x {args.epochs_incremental} round')

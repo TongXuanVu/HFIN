@@ -16,6 +16,96 @@ FL_TASK_CLASSES_SEQUENTIAL = {
     5: list(range(29, 34)), # Task 6 (5 classes): 29..33
 }
 
+# ──────────────────────────────────────────────────────────────────────
+# Hai bộ dữ liệu, hai cấu hình. Gọi set_dataset() TRƯỚC khi load bất cứ gì.
+#
+# Bố cục file của hai bộ GIỐNG HỆT nhau nên dùng chung được loader này:
+#     federated_data/client_{c}_task_{t}.pt   (t đánh số từ 1)
+#     global_test_data.pt
+#
+# Khác nhau ở ba điểm, và cả ba đều đủ sức làm hỏng thí nghiệm trong im lặng
+# nếu để mặc định:
+#   1. số task / số lớp mỗi task;
+#   2. lịch client tham gia dần theo task;
+#   3. IoT cần remap nhãn gốc -> tuần tự, IoV thì KHÔNG (nhãn trong .pt đã
+#      tuần tự 0..12 sẵn theo class_mapping.json). Áp nhầm LUT của IoT lên dữ
+#      liệu IoV sẽ đổi nhãn mà không báo lỗi.
+# ──────────────────────────────────────────────────────────────────────
+CAU_HINH_BO = {
+    "cic_iot23": {
+        # 34 lớp, chia [6,6,6,6,5,5] -> 6 task x 30 round = 180 round
+        "task_classes": {
+            0: list(range(0, 6)),
+            1: list(range(6, 12)),
+            2: list(range(12, 18)),
+            3: list(range(18, 24)),
+            4: list(range(24, 29)),
+            5: list(range(29, 34)),
+        },
+        "num_clients": 100,
+        # 50 -> 100 client, tăng 10 mỗi task
+        "client_theo_task": [50, 60, 70, 80, 90, 100],
+        "remap_nhan": True,      # nhãn gốc phi tuần tự, cần LUT
+        "num_features": 46,
+    },
+    "can_iov": {
+        # 13 lớp, chia [3,3,3,2,2] -> 5 task x 30 round = 150 round
+        # Thứ tự lớp: [Benign,DoS,double] [force-neutral,fuzzing,interval]
+        #             [rpm,rpm-accessory,speed] [speed-accessory,standstill]
+        #             [systematic,triple]
+        "task_classes": {
+            0: [0, 1, 2],
+            1: [3, 4, 5],
+            2: [6, 7, 8],
+            3: [9, 10],
+            4: [11, 12],
+        },
+        "num_clients": 100,
+        # CHÚ Ý: task cuối là 100 chứ KHÔNG phải 90. Bộ 100client của IoV thưa
+        # và client vào dần: id 0-49 có task 1..5, 50-59 từ task 2, 60-69 từ
+        # task 3, 70-79 từ task 4, 80-99 chỉ có task 5.
+        # Công thức cũ (0.5 + 0.1*task_id) cho 50/60/70/80/90 — sai ở task cuối.
+        "client_theo_task": [50, 60, 70, 80, 100],
+        "remap_nhan": False,     # nhãn đã tuần tự 0..12
+        "num_features": 31,
+    },
+}
+
+BO_HIEN_TAI = "cic_iot23"
+
+
+def set_dataset(ten):
+    """Chuyển loader sang bộ dữ liệu `ten`. Gọi trước mọi lời gọi load_*.
+
+    QUAN TRỌNG — phải SỬA TẠI CHỖ, không được gán lại tên:
+    `main.py` làm `from ... import FL_TASK_CLASSES_SEQUENTIAL`, tức nó giữ một
+    tham chiếu tới CHÍNH đối tượng dict này từ lúc import. Nếu ở đây gán
+    `FL_TASK_CLASSES_SEQUENTIAL = dict(...)` thì chỉ tên trong module này trỏ
+    sang dict mới, còn `main.py` vẫn dùng dict cũ của CIC-IoT23 — chạy IoV mà
+    vẫn chia 6 task 34 lớp, và không có lỗi nào được ném ra.
+    `clear()` + `update()` sửa đúng đối tượng đó nên mọi nơi đều thấy.
+    """
+    global BO_HIEN_TAI, NUM_FL_CLIENTS
+    if ten not in CAU_HINH_BO:
+        raise ValueError(f"[FL LOADER] Bo du lieu khong biet: {ten}. "
+                         f"Chi co: {list(CAU_HINH_BO)}")
+    BO_HIEN_TAI = ten
+    c = CAU_HINH_BO[ten]
+    FL_TASK_CLASSES_SEQUENTIAL.clear()
+    FL_TASK_CLASSES_SEQUENTIAL.update(c["task_classes"])
+    NUM_FL_CLIENTS = c["num_clients"]
+    _LABEL_LUT_CACHE.clear()          # LUT cu thuoc bo khac, phai bo di
+    print(f"[FL LOADER] Bo du lieu: {ten} | {len(FL_TASK_CLASSES_SEQUENTIAL)} task "
+          f"| {sum(len(v) for v in FL_TASK_CLASSES_SEQUENTIAL.values())} lop "
+          f"| remap nhan: {c['remap_nhan']}")
+    print(f"[FL LOADER] Client active theo task: {c['client_theo_task']}")
+
+
+def so_client_active(task_id):
+    """Số client tham gia ở task này (client id 0 .. n-1)."""
+    lich = CAU_HINH_BO[BO_HIEN_TAI]["client_theo_task"]
+    return lich[min(task_id, len(lich) - 1)]
+
 # Biến tạm để tránh lỗi Import trên Kaggle nếu main.py hoặc file khác vẫn gọi
 FL_TASK_CLASSES = {}
 GLOBAL_LABEL_MAP = {}
@@ -35,6 +125,14 @@ def _get_label_lut(data_dir):
     """Trả về LUT (tensor) map label gốc -> label tuần tự, hoặc None nếu data đã tuần tự."""
     if data_dir in _LABEL_LUT_CACHE:
         return _LABEL_LUT_CACHE[data_dir]
+
+    # Bộ nào KHÔNG cần remap thì dừng ngay ở đây. Nếu không, đoạn fallback bên
+    # dưới sẽ lấy task_mapping_label_ids.json nhúng trong repo — vốn là bảng
+    # của CIC-IoT23 (34 lớp) — rồi áp lên dữ liệu IoV (13 lớp). Nhãn bị đổi
+    # mà KHÔNG có lỗi nào được ném ra, vì mọi id 0..12 đều nằm trong bảng đó.
+    if not CAU_HINH_BO[BO_HIEN_TAI]["remap_nhan"]:
+        _LABEL_LUT_CACHE[data_dir] = None
+        return None
 
     # Tìm json trong data_dir trước, fallback về file nhúng trong repo
     # (trường hợp Kaggle dataset upload thiếu file json)
