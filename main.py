@@ -727,37 +727,46 @@ def main():
                     f'_global{global_round:03d}_acc{acc:.1f}.pth'
                 )
                 ckpt_path = os.path.join(args.checkpoint_dir, ckpt_filename)
-                # --- Collect Edge Server memories for full checkpoint ---
-                edge_memories = []
-                for edge in edge_servers:
-                    edge_memories.append({
+
+                # Round CUOI task thi BO QUA ban theo round: ban *_FINAL.pth o
+                # cuoi vong lap task luu cung noi dung (va la ban ma cac kich
+                # ban few-shot resume tu do). Truoc day round cuoi ghi CA HAI,
+                # tuc serialize toan bo exemplar cua 100 edge hai lan lien tiep
+                # -> dinh RAM gap doi dung luc memory vua duoc dung xong. Day la
+                # cho lam notebook OOM o task 0 round 30 cua bo IoV.
+                if is_last_round_of_task:
+                    logger.info('  [CKPT] Bo qua ban theo round (da co *_FINAL.pth)')
+                else:
+                    # --- Collect Edge Server memories for full checkpoint ---
+                    edge_memories = [{
                         'exemplar_set': edge.exemplar_manager.exemplar_set,
                         'exemplar_labels': edge.exemplar_manager.exemplar_labels
-                    })
+                    } for edge in edge_servers]
 
-                torch.save({
-                    'task_id':       task_id,
-                    'round_in_task': round_in_task + 1,
-                    'global_round':  global_round,
-                    'method':        args.method,
-                    'classes_learned': classes_learned,
-                    'model_state_dict': model_g.state_dict(),
-                    'edge_memories': edge_memories, # Important for full resume
-                    'metrics': {
-                        'accuracy':           acc,
-                        'precision_micro':    results_eval.get('precision_micro', 0),
-                        'precision_macro':    precision_mac,
-                        'precision_weighted': results_eval.get('precision_weighted', 0),
-                        'recall_micro':       results_eval.get('recall_micro', 0),
-                        'recall_macro':       recall_mac,
-                        'recall_weighted':    results_eval.get('recall_weighted', 0),
-                        'f1_micro':           f1_mic,
-                        'f1_macro':           f1_macro,
-                        'f1_weighted':        f1_weighted,
-                        'loss':               loss,
-                    },
-                }, ckpt_path)
-                logger.info(f'  [CKPT] Saved: {ckpt_filename}')
+                    torch.save({
+                        'task_id':       task_id,
+                        'round_in_task': round_in_task + 1,
+                        'global_round':  global_round,
+                        'method':        args.method,
+                        'classes_learned': classes_learned,
+                        'model_state_dict': model_g.state_dict(),
+                        'edge_memories': edge_memories, # Important for full resume
+                        'metrics': {
+                            'accuracy':           acc,
+                            'precision_micro':    results_eval.get('precision_micro', 0),
+                            'precision_macro':    precision_mac,
+                            'precision_weighted': results_eval.get('precision_weighted', 0),
+                            'recall_micro':       results_eval.get('recall_micro', 0),
+                            'recall_macro':       recall_mac,
+                            'recall_weighted':    results_eval.get('recall_weighted', 0),
+                            'f1_micro':           f1_mic,
+                            'f1_macro':           f1_macro,
+                            'f1_weighted':        f1_weighted,
+                            'loss':               loss,
+                        },
+                    }, ckpt_path)
+                    del edge_memories
+                    logger.info(f'  [CKPT] Saved: {ckpt_filename}')
 
                 # ── Don checkpoint cu ──────────────────────────────────────────
                 # Moi checkpoint ~594 MB vi kem edge_memories (rieng trong so mo

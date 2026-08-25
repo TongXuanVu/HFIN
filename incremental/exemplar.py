@@ -80,17 +80,30 @@ class ExemplarManager:
         # KHÔNG bị thrash bộ nhớ -> chạy xong được kể cả khi buffer lớn
         # (bản cũ của HFIN cấp phát N×d mỗi vòng -> treo khi m,N lớn).
         m = int(min(m, len(class_data)))
-        S = np.zeros(features.shape[1], dtype=np.float32)
-        mask = np.zeros(len(class_data), dtype=bool)
-        exemplar = []
-        for k in range(1, m + 1):
-            target_vector = k * class_mean - S
-            scores = features @ target_vector      # (N,) — 1 matvec, nhẹ RAM
-            scores[mask] = -np.inf
-            best_idx = int(np.argmax(scores))
-            mask[best_idx] = True
-            S += features[best_idx]
-            exemplar.append(class_data[best_idx])
+
+        if m >= len(class_data):
+            # Giu TAT CA ung vien -> herding khong loc bo gi, chi doi thu tu, ma
+            # thu tu khong duoc dung o dau (dataset.py gop bang np.concatenate).
+            # Bo qua vong lap giup tiet kiem ~12 phut moi edge lon: voi
+            # m = len = 200.000 thi vong lap cu ton 200.000 x 200.000 phep tinh
+            # chi de sap xep lai mot tap ma cuoi cung van lay tron ven.
+            exemplar = np.ascontiguousarray(class_data, dtype=np.float32)
+        else:
+            S = np.zeros(features.shape[1], dtype=np.float32)
+            mask = np.zeros(len(class_data), dtype=bool)
+            chon = np.empty(m, dtype=np.int64)
+            for k in range(1, m + 1):
+                target_vector = k * class_mean - S
+                scores = features @ target_vector      # (N,) — 1 matvec, nhẹ RAM
+                scores[mask] = -np.inf
+                best_idx = int(np.argmax(scores))
+                mask[best_idx] = True
+                S += features[best_idx]
+                chon[k - 1] = best_idx
+            # Gom mot lan thay vi append tung hang: mot mang lien tuc (m, d) ton
+            # ~124 B/mau, con list cac mang (d,) roi ton ~244 B/mau va tao ra m
+            # object rieng le lam torch.save vua cham vua ngon gap doi RAM.
+            exemplar = np.ascontiguousarray(class_data[chon], dtype=np.float32)
 
         self.exemplar_set.append(exemplar)
         self.exemplar_labels.append(class_label)
