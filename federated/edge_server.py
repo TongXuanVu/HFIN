@@ -92,6 +92,26 @@ class EdgeServer:
         self.client_ids = client_ids
 
     # ------------------------------------------------------------------
+    def _lay_ung_vien(self, new_x, new_y, cls):
+        """Mang numpy cac ung vien cua lop `cls` de dung exemplar.
+
+        Cat xuong herding_pool NGAY TREN CHI SO roi moi copy sang numpy. Ban cu
+        lam nguoc lai — `new_x[cls_mask].cpu().numpy()` materialize TOAN BO lop
+        roi mới cắt — nên voi client Benign lon nhat (7.869.131 mau x 31 dac
+        trung x 4 byte) no cap phat 976 MB chi de giu lai 200.000 dong. Cong voi
+        12,1 GB du lieu train cua ca 100 client va 5,2 GB tap test dang thuong
+        tru, dinh nay lam notebook OOM o round cuoi task 0.
+
+        Ket qua KHONG DOI: pool_indices() dung cung seed (class_label) va cung
+        do dai n, nen chon ra dung nhung dong ma ban cu chon.
+        """
+        idx = torch.nonzero(new_y == cls, as_tuple=True)[0]
+        pool_idx = self.exemplar_manager.pool_indices(len(idx), cls)
+        if pool_idx is not None:
+            idx = idx[torch.as_tensor(pool_idx, dtype=torch.long, device=idx.device)]
+        return new_x[idx].cpu().numpy()
+
+    # ------------------------------------------------------------------
     def train_local(self, clients_dict, global_round, task_id,
                     task_classes, current_f1_scores,
                     epochs=5, lr=0.01, batch_size=32, is_last_round=False):
@@ -326,11 +346,11 @@ class EdgeServer:
                 new_y = y_train[:num_new_samples]
                 for cls in np.unique(new_y.cpu().numpy()):
                     if cls in task_classes:
-                        cls_mask = (new_y == cls)
-                        cls_data = new_x[cls_mask].cpu().numpy()
+                        cls_data = self._lay_ung_vien(new_x, new_y, int(cls))
                         self.exemplar_manager.construct_exemplar_set(
                             cls_data, int(cls), self.model, self.device, m=m
                         )
+                        del cls_data
 
             logger.info(
                 f"Edge {self.edge_id}: [DER] Task {task_id} done. "
@@ -424,11 +444,11 @@ class EdgeServer:
                 new_y = y_train[:num_new_samples]
                 for cls in np.unique(new_y.cpu().numpy()):
                     if cls in task_classes:
-                        cls_mask = (new_y == cls)
-                        cls_data = new_x[cls_mask].cpu().numpy()
+                        cls_data = self._lay_ung_vien(new_x, new_y, int(cls))
                         self.exemplar_manager.construct_exemplar_set(
                             cls_data, int(cls), self.model, self.device, m=m
                         )
+                        del cls_data
                 logger.info(
                     f"Edge {self.edge_id}: Memory updated at end of task. "
                     f"Total stored: {self.exemplar_manager.total_stored_samples} samples "

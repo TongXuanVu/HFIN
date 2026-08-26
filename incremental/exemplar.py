@@ -31,6 +31,19 @@ class ExemplarManager:
         self.exemplar_labels = []  # nhãn tương ứng
         self.class_mean_set = []
 
+    def pool_indices(self, n, class_label):
+        """Chi so cua candidate pool cho mot lop co `n` mau, hoac None neu khong
+        can cat (n <= herding_pool).
+
+        Tach rieng ra de nguoi goi cat TREN CHI SO roi moi materialize mang —
+        thay vi copy ca lop ra numpy roi mới cắt. Cung seed, cung `n`, nen
+        pool_idx sinh ra y het cach cu: ket qua khong doi.
+        """
+        if not self.herding_pool or n <= self.herding_pool:
+            return None
+        rng = np.random.default_rng(int(class_label))
+        return rng.choice(n, size=self.herding_pool, replace=False)
+
     def construct_exemplar_set(self, class_data, class_label, model, device, m=None):
         """
         Xây dựng exemplar set cho một lớp bằng herding selection
@@ -50,10 +63,14 @@ class ExemplarManager:
         # ── Candidate pooling: nếu lớp quá lớn, random lấy pool trước khi herding ──
         # Giảm chi phí herding (O(m×N)) và cả trích xuất feature. Seed theo class_label
         # để tái lập được. Vẫn giữ nguyên số exemplar m (buffer 1% không đổi) vì pool >= m.
+        #
+        # LUU Y: nguoi goi NEN dung pool_indices() de rut gon TRUOC khi
+        # materialize mang numpy (xem edge_server.py). Nhanh duoi day chi con
+        # la duong lui cho cac loi goi cu — no bat buoc phai giu ca lop trong
+        # RAM truoc khi cat, voi client Benign 7,9 trieu mau la 976 MB.
         class_data = np.asarray(class_data)
         if self.herding_pool and len(class_data) > self.herding_pool:
-            rng = np.random.default_rng(int(class_label))
-            pool_idx = rng.choice(len(class_data), size=self.herding_pool, replace=False)
+            pool_idx = self.pool_indices(len(class_data), class_label)
             class_data = class_data[pool_idx]
 
         # Tính feature representations
