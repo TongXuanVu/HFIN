@@ -449,6 +449,8 @@ def main():
             feature_dim=args.feature_dim,
             herding_pool=args.herding_pool,
         )
+        edge.plain_ce = bool(getattr(args, 'plain_ce', False))
+        edge.wa_paper_lambda = bool(getattr(args, 'wa_paper_lambda', False))
         edge.set_clients(edge_client_map[e_id])
         edge_servers.append(edge)
 
@@ -630,6 +632,17 @@ def main():
             logger.info(f'\n--- Task {task_id}, Round {round_in_task + 1}/{num_rounds} '
                         f'(Global {global_round}) ---')
 
+            # LR / weight decay cua round nay. Mac dinh = hanh vi cu (lr co dinh, wd 1e-5).
+            round_lr, round_wd = current_lr, 1e-5
+            if getattr(args, 'paper_optim', False):
+                round_lr = 1e-2 if task_id == 0 else 2e-2
+                round_wd = 5e-4 if task_id == 0 else 2e-4
+                milestones = (int(0.5 * num_rounds), int(0.75 * num_rounds))
+                round_lr *= 0.1 ** sum(round_in_task >= m for m in milestones)
+            if round_in_task == 0 or (getattr(args, 'paper_optim', False) and round_in_task in milestones):
+                logger.info(f'  [OPT] lr={round_lr:g} wd={round_wd:g} plain_ce={getattr(args, "plain_ce", False)} '
+                            f'wa_paper_lambda={getattr(args, "wa_paper_lambda", False)}')
+
             # Phân phối Global Model về các Edges
             global_weights = cloud_server.get_weights()
             for edge in edge_servers:
@@ -652,9 +665,10 @@ def main():
                     task_classes=task_classes,
                     current_f1_scores=current_f1_scores,
                     epochs=args.epochs_local,
-                    lr=current_lr,
+                    lr=round_lr,
                     batch_size=args.batch_size,
-                    is_last_round=is_last_round_of_task
+                    is_last_round=is_last_round_of_task,
+                    weight_decay=round_wd
                 )
                 if weights:
                     edge_weights.append(weights)

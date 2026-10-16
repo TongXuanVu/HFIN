@@ -16,7 +16,7 @@ def get_one_hot(target, num_classes, device):
 
 def distillation_loss(outputs, old_outputs, targets, num_classes,
                       old_num_classes, device, temperature=2.0, is_old_mask=None,
-                      weights=None):
+                      weights=None, lambdas=None):
     """
     Tính loss kết hợp theo Eq. 7 từ bài báo HFIN, tối ưu hóa Selective KD.
     """
@@ -44,8 +44,8 @@ def distillation_loss(outputs, old_outputs, targets, num_classes,
         loss_kd = 0.0
 
     # 3. Hệ số Lambdas (Theo bài báo HFIN lambda1=1.0, lambda2=1.0)
-    lambda1 = 1.0
-    lambda2 = 1.0
+    # lambdas=(l1, l2): WA theo bai bao (Alg.2) truyen vao; None = 1,1 (iCaRL).
+    lambda1, lambda2 = lambdas if lambdas is not None else (1.0, 1.0)
     
     total_loss = lambda1 * loss_ce + lambda2 * loss_kd
     

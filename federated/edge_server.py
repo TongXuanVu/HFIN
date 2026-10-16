@@ -66,6 +66,9 @@ class EdgeServer:
         self.input_dim  = input_dim
         self.feature_dim = feature_dim
         self.herding_pool = herding_pool
+        # Co "theo bai bao" (main.py gan sau khi tao edge). Mac dinh TAT.
+        self.plain_ce = False
+        self.wa_paper_lambda = False
 
         # === Khoi tao Model theo method ===
         if method in ('der', 'der++'):
@@ -114,7 +117,8 @@ class EdgeServer:
     # ------------------------------------------------------------------
     def train_local(self, clients_dict, global_round, task_id,
                     task_classes, current_f1_scores,
-                    epochs=5, lr=0.01, batch_size=32, is_last_round=False):
+                    epochs=5, lr=0.01, batch_size=32, is_last_round=False,
+                    weight_decay=1e-5):
         """
         Huấn luyện cục bộ tại Edge Server.
 
@@ -195,6 +199,8 @@ class EdgeServer:
         # ── 3. Intra-task oversampling (cứu nhãn hiếm trong task hiện tại) ──
         unique_new, counts_new = torch.unique(y_train, return_counts=True)
         min_samples, max_repeat = 30, 10
+        if self.plain_ce:
+            counts_new = counts_new[:0]; unique_new = unique_new[:0]   # --plain_ce: khong oversample
         oversampled_x = [X_train]
         oversampled_y = [y_train]
         for cls, count in zip(unique_new, counts_new):
@@ -255,9 +261,11 @@ class EdgeServer:
         # Ta giữ trọng số mặc định là 1.0 hoặc có thể boosting nhẹ nếu cần.
         # Ở đây ta chuẩn hóa để giá trị trung bình là 1.0
         class_weights = class_weights / class_weights.mean()
+        if self.plain_ce:
+            class_weights = None   # CE thuong theo bai bao (Eq. 9)
 
         optimizer = optim.SGD(self.model.parameters(), lr=lr,
-                              momentum=0.9, weight_decay=1e-5)
+                              momentum=0.9, weight_decay=weight_decay)
 
         # ══════════════════════════════════════════════════════════════
         # NHÁNH TRAINING TÙY THEO METHOD
@@ -284,7 +292,7 @@ class EdgeServer:
                 # Cân bằng (balanced replay) giong iCaRL
                 num_new = len(X_train)
                 num_old = len(flat_ex_x)
-                if num_old > 0 and num_new > num_old:
+                if num_old > 0 and num_new > num_old and not self.plain_ce:
                     target_old = int(num_new * 0.20 / 0.80)
                     rep = min(max(1, target_old // num_old), 50)
                     if rep > 1:
@@ -378,7 +386,7 @@ class EdgeServer:
                 # Balanced replay: target 20% of batch, cap 50x
                 num_new = len(X_train)
                 num_old = len(flat_ex_x)
-                if num_old > 0 and num_new > num_old:
+                if num_old > 0 and num_new > num_old and not self.plain_ce:
                     target_old = int(num_new * 0.20 / 0.80)
                     rep = min(max(1, target_old // num_old), 50)
                     if rep > 1:
@@ -406,6 +414,11 @@ class EdgeServer:
                                 num_workers=_NUM_WORKERS,
                                 pin_memory=('cuda' in str(self.device)))
 
+            lambdas = None
+            if self.method == 'wa' and self.wa_paper_lambda and self.old_model is not None:
+                k_old = self.old_model.fc.out_features
+                k_new = self.model.fc.out_features - k_old
+                lambdas = (k_new / (k_old + k_new), k_old / (k_old + k_new))
             for epoch in range(epochs):
                 for features, targets, mask in loader:
                     features = features.to(self.device)
@@ -422,6 +435,7 @@ class EdgeServer:
                         self.device,
                         is_old_mask=mask,
                         weights=class_weights,
+                        lambdas=lambdas,
                     )
                     optimizer.zero_grad()
                     loss.backward()

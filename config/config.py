@@ -109,6 +109,21 @@ def args_parser():
     parser.add_argument('--temperature', type=float, default=2.0,
                         help='Temperature distillation (T=2)')
 
+    # === Cau hinh THEO BAI BAO (mac dinh TAT -> cac lan chay cu khong doi) ===
+    parser.add_argument('--paper_faithful', action='store_true',
+                        help=('Bat ca 3 co duoi day: --plain_ce --paper_optim --wa_paper_lambda. '
+                              'Bo memory (replay_ratio) KHONG bi anh huong.'))
+    parser.add_argument('--plain_ce', action='store_true',
+                        help=('CE thuong: bo trong so lop, bo oversample lop hiem, bo balanced replay '
+                              '(ca ba la phan code them, khong co trong bai bao).'))
+    parser.add_argument('--paper_optim', action='store_true',
+                        help=('Toi uu theo Sec VI.D: lr 1e-2 (task dau) / 2e-2 (task sau), '
+                              'weight decay 5e-4 / 2e-4, giam lr x0.1 tai 50%% va 75%% so round cua task '
+                              '(bai bao: 20,30/40 va 40,60/80).'))
+    parser.add_argument('--wa_paper_lambda', action='store_true',
+                        help=('WA: lambda1=K/(Kcu+K), lambda2=Kcu/(Kcu+K) (Alg.2 bai bao), '
+                              'thay cho 1,1 cua iCaRL.'))
+
     # === Method (Incremental Learning Strategy) ===
     parser.add_argument('--method', type=str, default='wa',
                         choices=['icarl', 'wa', 'der', 'der++'],
@@ -160,6 +175,8 @@ def args_parser():
                         help='Duong dan den file .pth de resume.')
 
     args = parser.parse_args()
+    if args.paper_faithful:
+        args.plain_ce = args.paper_optim = args.wa_paper_lambda = True
 
     # === Auto-fill tu dataset & task_schedule ===
     _fill_dataset_defaults(args)
