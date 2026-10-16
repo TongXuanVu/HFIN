@@ -1,0 +1,1 @@
+f388c4be6cab0e16e7b1b434d13ea30d9d5c3071ddb375a647c8f53abc3db122  ckpt_der_task00_FINAL.pth
