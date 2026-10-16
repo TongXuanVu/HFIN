@@ -301,6 +301,9 @@ def _run_test_mode(args, logger):
 def main():
     # === Parse arguments ===
     args = args_parser()
+    import evaluate as _ev
+    _ev.FAST_EVAL = bool(getattr(args, 'fast_eval', False))
+    _ev.FAST_EVAL_BATCH = int(getattr(args, 'eval_batch', 32768))
     
     # === Setup ===
     setup_seed(args.seed)
@@ -894,7 +897,7 @@ def main():
     
     # Đánh giá chi tiết cuối cùng (Final Summary)
     final_classes = list(range(min(classes_learned, args.total_classes)))
-    results = evaluate_model(model_g, test_dataset, final_classes, args.device)
+    results = evaluate_model(model_g, test_dataset, final_classes, args.device, keep_preds=True)
     print_evaluation_report(results, "FINAL", label_map, logger)
     
     # Lưu metrics mỗi round ra CSV

@@ -124,6 +124,12 @@ def args_parser():
                         help=('WA: lambda1=K/(Kcu+K), lambda2=Kcu/(Kcu+K) (Alg.2 bai bao), '
                               'thay cho 1,1 cua iCaRL.'))
 
+    parser.add_argument('--fast_eval', action='store_true',
+                        help=('Danh gia nhanh: tap test len GPU, batch lon, metric tu confusion matrix. '
+                              'Cung dinh nghia metric voi sklearn; mac dinh TAT.'))
+    parser.add_argument('--eval_batch', type=int, default=32768,
+                        help='Batch khi --fast_eval')
+
     # === Method (Incremental Learning Strategy) ===
     parser.add_argument('--method', type=str, default='wa',
                         choices=['icarl', 'wa', 'der', 'der++'],

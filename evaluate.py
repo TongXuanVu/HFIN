@@ -16,7 +16,88 @@ import seaborn as sns
 import os
 
 
-def evaluate_model(model, test_dataset, classes, device, batch_size=4096):
+# ---------------------------------------------------------------------------
+# FAST EVAL (--fast_eval). Cung dinh nghia metric voi sklearn, nhung:
+#   * tap test (da loc theo lop) dua len GPU 1 lan / task, khong tao DataLoader 42 trieu mau,
+#   * batch lon, confusion matrix tinh bang bincount tren GPU (so nguyen, chinh xac),
+#   * metric tinh tu confusion matrix thay vi 8 lan goi sklearn tren mang 42 trieu phan tu.
+# Khac biet so voi duong cu: chi la sai so lam tron float cua loss va viec cuDNN co the
+# chon thuat toan khac khi batch khac (co the lat 1-2 du doan sat nguong). Tat mac dinh.
+# ---------------------------------------------------------------------------
+FAST_EVAL = False
+FAST_EVAL_BATCH = 32768
+_FAST_CACHE = {}
+
+
+def _fast_tensors(test_dataset, classes, device):
+    key = (id(test_dataset), tuple(classes))
+    hit = _FAST_CACHE.get('k')
+    if hit is not None and hit[0] == key:
+        return hit[1], hit[2]
+    _FAST_CACHE.clear()
+    test_dataset.getTestData(classes)
+    X = test_dataset._X_t
+    y = test_dataset._y_t
+    try:
+        X = X.to(device); y = y.to(device)
+    except RuntimeError:               # het VRAM -> giu tren CPU (pin) va chuyen tung batch
+        torch.cuda.empty_cache()
+        X = X.pin_memory() if 'cuda' in str(device) else X
+    _FAST_CACHE['k'] = (key, X, y)
+    return X, y
+
+
+def _evaluate_fast(model, test_dataset, classes, device):
+    classes = list(classes)
+    C = len(classes)
+    model.eval()
+    model.to(device)
+    X, y = _fast_tensors(test_dataset, classes, device)
+    N = int(y.shape[0])
+    bs = int(FAST_EVAL_BATCH)
+    K = C
+    cm = None
+    loss_sum = torch.zeros((), dtype=torch.float64, device=device)
+    with torch.no_grad():
+        for i in range(0, N, bs):
+            xb = X[i:i + bs].to(device, non_blocking=True)
+            yb = y[i:i + bs].to(device, non_blocking=True)
+            out = model(xb)
+            if isinstance(out, tuple):
+                out = out[0]
+            if cm is None:
+                K = max(C, int(out.shape[1]))
+                cm = torch.zeros(K * K, dtype=torch.int64, device=device)
+            loss_sum += F.cross_entropy(out, yb, reduction='sum').double()
+            cm += torch.bincount(yb * K + out.argmax(dim=1), minlength=K * K)
+    cm = cm.view(K, K).cpu().numpy().astype(np.int64)
+    loss = float(loss_sum.item()) / max(1, N)
+
+    row, col, tp = cm.sum(1), cm.sum(0), np.diag(cm)
+    present = (row > 0) | (col > 0)               # = labels = union(y_true, y_pred) cua sklearn
+    tp_, fp_, fn_ = tp[present].astype(np.float64), (col - tp)[present].astype(np.float64), (row - tp)[present].astype(np.float64)
+    sup = row[present].astype(np.float64)
+    def div(a, b):
+        return np.where(b > 0, a / np.where(b > 0, b, 1), 0.0)
+    prec, rec = div(tp_, tp_ + fp_), div(tp_, tp_ + fn_)
+    f1 = div(2 * tp_, 2 * tp_ + fp_ + fn_)
+    tot = float(sup.sum())
+    acc = float(tp.sum()) / max(1.0, tot)
+    wavg = lambda v: float((v * sup).sum() / tot) if tot > 0 else 0.0
+    cmC = cm[:C, :C]
+    fp0, tn0 = int(cmC[0, 1:].sum()), int(cmC[0, 0])
+    fpr = (fp0 / (fp0 + tn0)) * 100 if (fp0 + tn0) > 0 else 0.0
+    return {
+        'accuracy': acc * 100,
+        'precision_micro': acc * 100, 'precision_macro': float(prec.mean()) * 100, 'precision_weighted': wavg(prec) * 100,
+        'recall_micro': acc * 100, 'recall_macro': float(rec.mean()) * 100, 'recall_weighted': wavg(rec) * 100,
+        'f1_micro': acc * 100, 'f1_macro': float(f1.mean()) * 100, 'f1_weighted': wavg(f1) * 100,
+        'fpr': fpr, 'per_class_f1': f1 * 100, 'loss': loss,
+        'y_true': None, 'y_pred': None, 'confusion_matrix': cm,
+    }
+
+
+def evaluate_model(model, test_dataset, classes, device, batch_size=4096, keep_preds=False):
     """
     Đánh giá model trên tập test
     
@@ -30,6 +111,11 @@ def evaluate_model(model, test_dataset, classes, device, batch_size=4096):
     Returns:
         dict với accuracy, f1_macro, f1_weighted, per_class_f1, y_true, y_pred
     """
+    if FAST_EVAL and not keep_preds and isinstance(classes, (list, range)) and list(classes) == list(range(len(classes))):
+        results = _evaluate_fast(model, test_dataset, classes, device)
+        model.train()
+        return results
+
     model.eval()
     model.to(device)
 
