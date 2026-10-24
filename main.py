@@ -454,6 +454,7 @@ def main():
         )
         edge.plain_ce = bool(getattr(args, 'plain_ce', False))
         edge.wa_paper_lambda = bool(getattr(args, 'wa_paper_lambda', False))
+        edge.replay_class_ratio = float(getattr(args, 'replay_class_ratio', 0.0) or 0.0)
         edge.set_clients(edge_client_map[e_id])
         edge_servers.append(edge)
 
@@ -546,6 +547,18 @@ def main():
                         edge_servers[e_id].exemplar_manager.exemplar_set = mem['exemplar_set']
                         edge_servers[e_id].exemplar_manager.exemplar_labels = mem['exemplar_labels']
             
+            # Replay theo tung lop: cat bo nho cu (gan 100% du lieu lop cu) xuong ratio.
+            if getattr(args, 'replay_class_ratio', 0.0) and 'edge_memories' in checkpoint:
+                from incremental.replay_budget import edge_class_counts, trim_memories
+                _done = list(range(start_task_id + (1 if start_round_in_task >= args.epochs_incremental or
+                                                     start_round_in_task >= args.epochs_base and start_task_id == 0 else 0)))
+                _cnt = edge_class_counts(
+                    args.data_path, edge_client_map, FL_TASK_CLASSES_SEQUENTIAL, _done,
+                    _fl.load_fl_client_task,
+                    cache_path=os.path.join(args.checkpoint_dir, '_edge_class_counts.json'),
+                    tag=(getattr(args, 'fewshot_dir', '') or 'full'))
+                trim_memories(edge_servers, _cnt, args.replay_class_ratio, logger)
+
             logger.info(f'[RESUME] Resuming from Task {start_task_id}, Round {start_round_in_task} (Global Round {global_round})')
         else:
             logger.error(f'[RESUME] Checkpoint file not found: {args.resume_ckpt}')

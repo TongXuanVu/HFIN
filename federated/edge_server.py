@@ -69,6 +69,7 @@ class EdgeServer:
         # Co "theo bai bao" (main.py gan sau khi tao edge). Mac dinh TAT.
         self.plain_ce = False
         self.wa_paper_lambda = False
+        self.replay_class_ratio = 0.0   # >0: moi lop giu int(n_lop*ratio) mau (cung dinh nghia voi cac bai khac)
 
         # === Khoi tao Model theo method ===
         if method in ('der', 'der++'):
@@ -348,15 +349,20 @@ class EdgeServer:
                 # Cap nhat exemplar memory tuong tu iCaRL
                 total_learned = len(self.exemplar_manager.exemplar_set) + len(task_classes)
                 m = self.exemplar_manager.memory_size // total_learned
-                self.exemplar_manager.reduce_exemplar_sets(m)
+                if not self.replay_class_ratio:
+                    self.exemplar_manager.reduce_exemplar_sets(m)
 
                 new_x = X_train[:num_new_samples]
                 new_y = y_train[:num_new_samples]
                 for cls in np.unique(new_y.cpu().numpy()):
                     if cls in task_classes:
                         cls_data = self._lay_ung_vien(new_x, new_y, int(cls))
+                        m_cls = m
+                        if self.replay_class_ratio:
+                            n_cls = int((new_y == int(cls)).sum().item())
+                            m_cls = max(1, int(n_cls * self.replay_class_ratio))
                         self.exemplar_manager.construct_exemplar_set(
-                            cls_data, int(cls), self.model, self.device, m=m
+                            cls_data, int(cls), self.model, self.device, m=m_cls
                         )
                         del cls_data
 
@@ -452,15 +458,20 @@ class EdgeServer:
 
                 total_learned = len(self.exemplar_manager.exemplar_set) + len(task_classes)
                 m = self.exemplar_manager.memory_size // total_learned
-                self.exemplar_manager.reduce_exemplar_sets(m)
+                if not self.replay_class_ratio:
+                    self.exemplar_manager.reduce_exemplar_sets(m)
 
                 new_x = X_train[:num_new_samples]
                 new_y = y_train[:num_new_samples]
                 for cls in np.unique(new_y.cpu().numpy()):
                     if cls in task_classes:
                         cls_data = self._lay_ung_vien(new_x, new_y, int(cls))
+                        m_cls = m
+                        if self.replay_class_ratio:
+                            n_cls = int((new_y == int(cls)).sum().item())
+                            m_cls = max(1, int(n_cls * self.replay_class_ratio))
                         self.exemplar_manager.construct_exemplar_set(
-                            cls_data, int(cls), self.model, self.device, m=m
+                            cls_data, int(cls), self.model, self.device, m=m_cls
                         )
                         del cls_data
                 logger.info(

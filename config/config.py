@@ -124,6 +124,11 @@ def args_parser():
                         help=('WA: lambda1=K/(Kcu+K), lambda2=Kcu/(Kcu+K) (Alg.2 bai bao), '
                               'thay cho 1,1 cua iCaRL.'))
 
+    parser.add_argument('--replay_class_ratio', type=float, default=0.0,
+                        help=('Replay theo TUNG LOP: moi lop tai moi edge (edge = 1 client) giu '
+                              'max(1, int(n_lop * ratio)) mau, cung dinh nghia voi AFSIC-IOV va cac bai khac. '
+                              '0 = tat (dung replay_ratio/memory_size). Khi resume tu ckpt co bo nho theo luat cu, '
+                              'bo nho duoc cat xuong ratio (lay ngau nhien co seed).'))
     parser.add_argument('--fast_eval', action='store_true',
                         help=('Danh gia nhanh: tap test len GPU, batch lon, metric tu confusion matrix. '
                               'Cung dinh nghia metric voi sklearn; mac dinh TAT.'))
