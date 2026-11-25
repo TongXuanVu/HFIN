@@ -151,7 +151,7 @@ def args_parser():
                         help='Dropout rate')
 
     # === Khac ===
-    parser.add_argument('--seed', type=int, default=2024,
+    parser.add_argument('--seed', type=int, default=2021,
                         help='Random seed')
     parser.add_argument('--eval_interval', type=int, default=1,
                         help='So global rounds giua moi lan danh gia')

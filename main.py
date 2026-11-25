@@ -317,6 +317,7 @@ def main():
     logger.info('='*60)
     logger.info(f'Device: {args.device}')
     logger.info(f'Dataset: {args.dataset}')
+    logger.info(f'Seed: {args.seed}')
     logger.info(f'Method: {args.method.upper()}')
     logger.info(f'Mode: {args.mode.upper()}')
     logger.info(f'Clients: {args.num_clients}, Edge Servers: {args.num_edge_servers}')
